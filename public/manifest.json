@@ -1,0 +1,17 @@
+{
+  "name": "jodbill - จดบิลค่าน้ำค่าไฟ",
+  "short_name": "jodbill",
+  "description": "ระบบบันทึกและคำนวณค่าน้ำค่าไฟอัจฉริยะแบบ Real-Time พร้อม AI OCR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
