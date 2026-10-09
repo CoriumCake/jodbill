@@ -27,9 +27,26 @@ export interface FirebaseConfig {
 }
 
 const FIREBASE_CONFIG_STORAGE_KEY = 'jodbill_custom_firebase_config';
-const MOCK_USER_STORAGE_KEY = 'jodbill_mock_auth_user';
+const GOOGLE_CLIENT_ID_STORAGE_KEY = 'jodbill_google_client_id';
+const CURRENT_USER_STORAGE_KEY = 'jodbill_active_auth_user';
+const SAVED_ACCOUNTS_STORAGE_KEY = 'jodbill_saved_accounts';
 
-// Read config from env or localStorage
+// Google Client ID
+export function getGoogleClientId(): string | null {
+  const custom = localStorage.getItem(GOOGLE_CLIENT_ID_STORAGE_KEY);
+  if (custom && custom.trim()) return custom.trim();
+  return import.meta.env.VITE_GOOGLE_CLIENT_ID || null;
+}
+
+export function saveGoogleClientId(clientId: string | null): void {
+  if (!clientId || !clientId.trim()) {
+    localStorage.removeItem(GOOGLE_CLIENT_ID_STORAGE_KEY);
+  } else {
+    localStorage.setItem(GOOGLE_CLIENT_ID_STORAGE_KEY, clientId.trim());
+  }
+}
+
+// Read Firebase config from env or localStorage
 export function getFirebaseConfig(): FirebaseConfig | null {
   const customStr = localStorage.getItem(FIREBASE_CONFIG_STORAGE_KEY);
   if (customStr) {
@@ -67,6 +84,28 @@ export function saveFirebaseConfig(config: FirebaseConfig | null): void {
   } else {
     localStorage.setItem(FIREBASE_CONFIG_STORAGE_KEY, JSON.stringify(config));
   }
+}
+
+// Saved Accounts List
+export function getSavedAccounts(): AuthUser[] {
+  try {
+    const raw = localStorage.getItem(SAVED_ACCOUNTS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function addSavedAccount(account: AuthUser): void {
+  const accounts = getSavedAccounts().filter((a) => a.uid !== account.uid && a.email !== account.email);
+  const updated = [account, ...accounts];
+  localStorage.setItem(SAVED_ACCOUNTS_STORAGE_KEY, JSON.stringify(updated.slice(0, 5)));
+}
+
+export function removeSavedAccount(uid: string): void {
+  const accounts = getSavedAccounts().filter((a) => a.uid !== uid);
+  localStorage.setItem(SAVED_ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
 }
 
 // Lazy Firebase initialization
@@ -112,13 +151,14 @@ export function subscribeToAuth(callback: (user: AuthUser | null) => void): () =
   if (fb && fb.auth) {
     return onAuthStateChanged(fb.auth, (user) => {
       if (user) {
-        callback(formatFirebaseUser(user));
+        const formatted = formatFirebaseUser(user);
+        addSavedAccount(formatted);
+        callback(formatted);
       } else {
-        // Check if there is a mock session
-        const mockUserStr = localStorage.getItem(MOCK_USER_STORAGE_KEY);
-        if (mockUserStr) {
+        const localUserStr = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+        if (localUserStr) {
           try {
-            callback(JSON.parse(mockUserStr));
+            callback(JSON.parse(localUserStr));
             return;
           } catch {
             // ignore
@@ -129,11 +169,11 @@ export function subscribeToAuth(callback: (user: AuthUser | null) => void): () =
     });
   }
 
-  // Fallback to local stored session (mock / simulated Google user)
-  const mockUserStr = localStorage.getItem(MOCK_USER_STORAGE_KEY);
-  if (mockUserStr) {
+  // Fallback to active local stored session
+  const localUserStr = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+  if (localUserStr) {
     try {
-      callback(JSON.parse(mockUserStr));
+      callback(JSON.parse(localUserStr));
     } catch {
       callback(null);
     }
@@ -141,38 +181,111 @@ export function subscribeToAuth(callback: (user: AuthUser | null) => void): () =
     callback(null);
   }
 
-  // Return unsubscribe dummy
   return () => {};
 }
 
-// Google Sign-In
-export async function loginWithGoogle(): Promise<AuthUser> {
-  const fb = initFirebase();
+// Global window declaration for Google Identity Services (GIS)
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        oauth2: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (response: { access_token?: string; error?: string }) => void;
+            error_callback?: (err: unknown) => void;
+          }) => {
+            requestAccessToken: () => void;
+          };
+        };
+      };
+    };
+  }
+}
 
-  if (fb && fb.auth) {
-    try {
-      const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(fb.auth, provider);
-      const user = formatFirebaseUser(result.user);
-      localStorage.removeItem(MOCK_USER_STORAGE_KEY);
-      return user;
-    } catch (err: unknown) {
-      console.error('Google Sign-in Error:', err);
-      throw err;
+// Real Google GIS OAuth2 Login
+export async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
+  return new Promise((resolve, reject) => {
+    if (!window.google?.accounts?.oauth2) {
+      reject(new Error('Google Identity Services script not loaded.'));
+      return;
     }
+
+    try {
+      const client = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'email profile openid',
+        callback: async (response) => {
+          if (response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+          if (response.access_token) {
+            try {
+              // Fetch user info from Google's UserInfo API
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${response.access_token}` },
+              });
+              const data = await res.json();
+              const authUser: AuthUser = {
+                uid: data.sub || `google-${data.email}`,
+                displayName: data.name || data.email?.split('@')[0] || 'Google User',
+                email: data.email,
+                photoURL: data.picture || null,
+                provider: 'google',
+              };
+              localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(authUser));
+              addSavedAccount(authUser);
+              resolve(authUser);
+            } catch (err) {
+              reject(err);
+            }
+          }
+        },
+        error_callback: (err) => {
+          reject(err);
+        },
+      });
+
+      client.requestAccessToken();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// Firebase Google Sign-In
+export async function loginWithFirebaseGoogle(): Promise<AuthUser> {
+  const fb = initFirebase();
+  if (!fb || !fb.auth) {
+    throw new Error('Firebase is not configured');
   }
 
-  // Fallback: Instant Simulated Google Auth (allows immediate cross-browser test / zero config demo)
-  const simulatedUser: AuthUser = {
-    uid: `google-user-${Date.now()}`,
-    displayName: 'ผู้ใช้งาน Google (Cloud Sync)',
-    email: 'user.jodbill@gmail.com',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=128&h=128&fit=crop&crop=face',
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  const result = await signInWithPopup(fb.auth, provider);
+  const user = formatFirebaseUser(result.user);
+  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
+  addSavedAccount(user);
+  return user;
+}
+
+// Custom / Manual Account Login (e.g. Choose Gmail address)
+export function loginWithCustomAccount(email: string, displayName?: string, photoURL?: string): AuthUser {
+  const cleanEmail = email.trim().toLowerCase();
+  const name = displayName?.trim() || cleanEmail.split('@')[0];
+  const user: AuthUser = {
+    uid: `acc-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    displayName: name,
+    email: cleanEmail,
+    photoURL: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
     provider: 'demo',
   };
-  localStorage.setItem(MOCK_USER_STORAGE_KEY, JSON.stringify(simulatedUser));
-  return simulatedUser;
+
+  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
+  addSavedAccount(user);
+  return user;
 }
 
 // Sign Out
@@ -185,7 +298,7 @@ export async function logoutUser(): Promise<void> {
       console.warn('Signout error:', err);
     }
   }
-  localStorage.removeItem(MOCK_USER_STORAGE_KEY);
+  localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
 }
 
 // Cloud Sync: Push state to Cloud
@@ -209,7 +322,7 @@ export async function pushUserDataToCloud(
     }
   }
 
-  // Fallback: Store in mock cloud store (browser localStorage cloud simulation)
+  // Store in cloud store simulation for this specific user
   const mockCloudKey = `jodbill_cloud_db_${uid}`;
   localStorage.setItem(mockCloudKey, JSON.stringify({
     settings: data.settings,
@@ -243,7 +356,7 @@ export async function fetchUserDataFromCloud(
     }
   }
 
-  // Fallback: Read from mock cloud store
+  // Fallback: Read from cloud store simulation
   const mockCloudKey = `jodbill_cloud_db_${uid}`;
   const raw = localStorage.getItem(mockCloudKey);
   if (raw) {
