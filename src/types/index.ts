@@ -46,6 +46,27 @@ export interface GovernmentRateConfig {
 
 export type RateConfig = DormFlatRateConfig | GovernmentRateConfig;
 
+export type UserRole = 'owner' | 'editor' | 'viewer';
+
+export interface RoomShareConfig {
+  roomId: string;
+  editorPin: string;
+  viewerPin: string;
+  roomName: string;
+  createdAt: string;
+  remoteSyncUrl?: string;
+}
+
+export interface SharePayload {
+  version: number;
+  roomId: string;
+  role: UserRole;
+  settings: Partial<UserSettings>;
+  readings: MeterReading[];
+  exportedAt: string;
+  editorPin?: string;
+}
+
 export interface UserSettings {
   dormName: string;
   roomNumber: string;
@@ -58,6 +79,8 @@ export interface UserSettings {
   preferredOcrProvider: OCRProvider;
   soundEnabled: boolean;
   theme: 'dark' | 'light' | 'cyber';
+  currentRole?: UserRole;           // 'owner' (default) | 'editor' | 'viewer'
+  roomShare?: RoomShareConfig;
 }
 
 export interface CycleSummary {

@@ -5,12 +5,14 @@ import {
   Plus, 
   ArrowRight, 
   Calculator, 
-  History as HistoryIcon, 
   Sparkles,
   RotateCcw,
-  Camera
+  Camera,
+  Share2,
+  Eye,
+  Edit3
 } from 'lucide-react';
-import type { MeterReading, UserSettings, MeterType } from './types';
+import type { MeterReading, UserSettings, MeterType, UserRole } from './types';
 import { 
   loadReadings, 
   saveReadings, 
@@ -23,6 +25,7 @@ import {
 } from './utils/storage';
 import { calculateCycleSummary } from './utils/projection';
 import { startProductTour } from './utils/tour';
+import { checkUrlForShare, clearShareUrlParams } from './utils/shareService';
 import { Header } from './components/Header';
 import { HeroRealtimeCards } from './components/HeroRealtimeCards';
 import { ChartsSection } from './components/ChartsSection';
@@ -31,17 +34,22 @@ import { ApplianceSimulator } from './components/ApplianceSimulator';
 import { RecordMeterModal } from './components/RecordMeterModal';
 import { SettingsModal } from './components/SettingsModal';
 import { BillSlipModal } from './components/BillSlipModal';
+import { ShareModal } from './components/ShareModal';
 
 export function App() {
   const [readings, setReadings] = useState<MeterReading[]>(() => loadReadings());
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'simulator'>('dashboard');
 
+  // Role permissions: 'owner' | 'editor' | 'viewer'
+  const currentRole: UserRole = settings.currentRole || 'owner';
+
   // Modal states
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
   const [recordDefaultType, setRecordDefaultType] = useState<MeterType>('electricity');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBillSlipOpen, setIsBillSlipOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Sync state to LocalStorage
@@ -52,6 +60,29 @@ export function App() {
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  // Check if opened via room share link
+  useEffect(() => {
+    const shared = checkUrlForShare();
+    if (shared) {
+      if (shared.readings && shared.readings.length > 0) {
+        setReadings(shared.readings);
+      }
+      if (shared.settings) {
+        setSettings((prev) => ({
+          ...prev,
+          ...shared.settings,
+          currentRole: shared.role,
+        }));
+      }
+      clearShareUrlParams();
+      showToast(
+        `📥 นำเข้าห้อง "${shared.settings.dormName || 'หอพัก'}" สำเร็จ (สิทธิ์: ${
+          shared.role === 'viewer' ? 'ดูอย่างเดียว' : 'ผู้ร่วมจด'
+        })`
+      );
+    }
+  }, []);
 
   // First-time tour check
   useEffect(() => {
@@ -74,6 +105,12 @@ export function App() {
   }, [readings, settings]);
 
   const handleSaveReading = (newReadingData: Omit<MeterReading, 'id'>) => {
+    if (currentRole === 'viewer') {
+      setIsShareModalOpen(true);
+      showToast('⚠️ คุณอยู่ในโหมดดูอย่างเดียว กรุณาใส่รหัส PIN เพื่อปลดล็อกสิทธิ์จดมิเตอร์');
+      return;
+    }
+
     const newReading: MeterReading = {
       ...newReadingData,
       id: `reading-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -84,6 +121,10 @@ export function App() {
   };
 
   const handleDeleteReading = (id: string) => {
+    if (currentRole === 'viewer') {
+      showToast('⚠️ ไม่อนุญาตให้ลบข้อมูลในโหมดดูอย่างเดียว');
+      return;
+    }
     setReadings((prev) => prev.filter((r) => r.id !== id));
     showToast('ลบรายการบันทึกแล้ว');
   };
@@ -124,8 +165,18 @@ export function App() {
   };
 
   const openRecordModal = (type: MeterType = 'electricity') => {
+    if (currentRole === 'viewer') {
+      setIsShareModalOpen(true);
+      showToast('⚠️ คุณอยู่ในโหมดดูอย่างเดียว กรุณาใส่รหัส PIN เพื่อปลดล็อกสิทธิ์ร่วมจด');
+      return;
+    }
     setRecordDefaultType(type);
     setIsRecordModalOpen(true);
+  };
+
+  const handleUpgradeRole = (newRole: UserRole) => {
+    setSettings((prev) => ({ ...prev, currentRole: newRole }));
+    showToast(`🎉 อัปเกรดสิทธิ์เป็น "${newRole === 'editor' ? 'ผู้ร่วมจด' : 'เจ้าของห้อง'}" เรียบร้อยแล้ว`);
   };
 
   const handleStartTour = () => {
@@ -137,13 +188,30 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col selection:bg-amber-100 selection:text-amber-900">
+      {/* Viewer Notice Header Banner if in Read-Only Mode */}
+      {currentRole === 'viewer' && (
+        <div className="bg-amber-500/10 border-b border-amber-200/80 px-4 py-2 text-center text-xs text-amber-900 flex items-center justify-center gap-2">
+          <Eye className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+          <span>คุณกำลังเปิดดูในโหมด <strong>"ดูอย่างเดียว (Viewer)"</strong></span>
+          <button
+            type="button"
+            onClick={() => setIsShareModalOpen(true)}
+            className="underline font-bold text-amber-800 hover:text-amber-950 cursor-pointer ml-1"
+          >
+            ใส่รหัส PIN เพื่อร่วมจดมิเตอร์
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         settings={settings}
+        currentRole={currentRole}
         onOpenRecordModal={openRecordModal}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenShare={() => setIsShareModalOpen(true)}
         onOpenBillSlip={() => setIsBillSlipOpen(true)}
         onExportCSV={handleExportCSV}
         onStartTour={handleStartTour}
@@ -169,13 +237,23 @@ export function App() {
                   </p>
                 </div>
                 <div className="flex items-center justify-center gap-3 pt-1">
-                  <button
-                    onClick={() => openRecordModal('electricity')}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>จดมิเตอร์ครั้งแรก</span>
-                  </button>
+                  {currentRole !== 'viewer' ? (
+                    <button
+                      onClick={() => openRecordModal('electricity')}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>จดมิเตอร์ครั้งแรก</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setIsShareModalOpen(true)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                      <span>ปลดล็อกสิทธิ์เพื่อเริ่มจด</span>
+                    </button>
+                  )}
                   <button
                     onClick={handleLoadDemoData}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs cursor-pointer active:scale-95 transition-all"
@@ -248,40 +326,16 @@ export function App() {
 
             {/* Interactive Charts */}
             <ChartsSection readings={readings} settings={settings} />
-
-            {/* Recent Readings Table Preview */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between px-1">
-                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <HistoryIcon className="w-3.5 h-3.5 text-slate-500" />
-                  บันทึกล่าสุด
-                </h3>
-                <button
-                  onClick={() => setActiveTab('history')}
-                  className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
-                >
-                  <span>ดูประวัติทั้งหมด ({readings.length})</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-
-              <HistoryTable
-                readings={readings.slice(0, 5)}
-                settings={settings}
-                onDeleteReading={handleDeleteReading}
-                onOpenRecord={openRecordModal}
-                onExportCSV={handleExportCSV}
-              />
-            </div>
           </div>
         )}
 
-        {/* ================= TAB 2: HISTORY ================= */}
+        {/* ================= TAB 2: HISTORY TABLE ================= */}
         {activeTab === 'history' && (
           <div className="space-y-5">
             <HistoryTable
               readings={readings}
               settings={settings}
+              currentRole={currentRole}
               onDeleteReading={handleDeleteReading}
               onOpenRecord={openRecordModal}
               onExportCSV={handleExportCSV}
@@ -298,15 +352,27 @@ export function App() {
       </main>
 
       {/* Floating Mobile Record Button */}
-      <div className="fixed right-4 bottom-5 z-40 sm:hidden">
-        <button
-          onClick={() => openRecordModal('electricity')}
-          className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-slate-900 text-white font-bold text-xs shadow-lg active:scale-95 transition-transform cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>จดบิล</span>
-        </button>
-      </div>
+      {currentRole !== 'viewer' ? (
+        <div className="fixed right-4 bottom-5 z-40 sm:hidden">
+          <button
+            onClick={() => openRecordModal('electricity')}
+            className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-slate-900 text-white font-bold text-xs shadow-lg active:scale-95 transition-transform cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>จดบิล</span>
+          </button>
+        </div>
+      ) : (
+        <div className="fixed right-4 bottom-5 z-40 sm:hidden">
+          <button
+            onClick={() => setIsShareModalOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-amber-600 text-white font-bold text-xs shadow-lg active:scale-95 transition-transform cursor-pointer"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>แชร์/ปลดล็อก</span>
+          </button>
+        </div>
+      )}
 
       {/* Modals */}
       <RecordMeterModal
@@ -336,6 +402,15 @@ export function App() {
         onClose={() => setIsBillSlipOpen(false)}
         summary={cycleSummary}
         settings={settings}
+      />
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        settings={settings}
+        readings={readings}
+        currentRole={currentRole}
+        onUpgradeRole={handleUpgradeRole}
       />
 
       {/* Toast Alert */}
