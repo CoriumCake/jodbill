@@ -2,6 +2,16 @@ export type MeterType = 'electricity' | 'water';
 
 export type OCRProvider = 'tesseract' | 'gemini' | 'manual';
 
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error' | 'unauthenticated';
+
+export interface AuthUser {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+  provider: 'google' | 'mock' | 'demo';
+}
+
 export interface MeterReading {
   id: string;
   meterType: MeterType;

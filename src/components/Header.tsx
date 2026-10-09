@@ -6,33 +6,40 @@ import {
   HelpCircle, 
   Share2, 
   Zap, 
-  Droplets 
+  Droplets,
+  Cloud
 } from 'lucide-react';
-import type { UserSettings, UserRole } from '../types';
+import type { UserSettings, UserRole, AuthUser, SyncStatus } from '../types';
 
 interface HeaderProps {
   activeTab: 'dashboard' | 'history' | 'simulator';
   setActiveTab: (tab: 'dashboard' | 'history' | 'simulator') => void;
   settings: UserSettings;
   currentRole: UserRole;
+  user: AuthUser | null;
+  syncStatus: SyncStatus;
   onOpenRecordModal: (type?: 'electricity' | 'water') => void;
   onOpenSettings: () => void;
   onOpenShare: () => void;
   onOpenBillSlip: () => void;
   onExportCSV: () => void;
   onStartTour: () => void;
+  onOpenAuth: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   settings,
   currentRole,
+  user,
+  syncStatus: _syncStatus,
   onOpenRecordModal,
   onOpenSettings,
   onOpenShare,
   onOpenBillSlip,
   onExportCSV,
   onStartTour,
+  onOpenAuth,
 }) => {
   const getTabTitle = () => {
     switch (activeTab) {
@@ -108,6 +115,30 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Action Icons & Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Google Profile / Cloud Sync Button */}
+            <button
+              onClick={onOpenAuth}
+              title={user ? `เข้าสู่ระบบโดย: ${user.email || user.displayName}` : 'เข้าสู่ระบบ Google เพื่อซิงค์ข้ามเครื่อง'}
+              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                user
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+              }`}
+            >
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="Google" className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-emerald-400" />
+              ) : user ? (
+                <div className="w-5 h-5 rounded-full bg-emerald-700 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                  {(user.displayName || 'G')[0]}
+                </div>
+              ) : (
+                <Cloud className="w-4 h-4 text-slate-500" />
+              )}
+              <span className="hidden sm:inline">
+                {user ? 'คลาวด์ซิงค์' : 'เข้าสู่ระบบ'}
+              </span>
+            </button>
+
             {/* Share Room Button */}
             <button
               onClick={onOpenShare}
@@ -157,7 +188,7 @@ export const Header: React.FC<HeaderProps> = ({
               <SettingsIcon className="w-4 h-4" />
             </button>
 
-            {/* Primary Record Button (Visible in Header on tablet/desktop) */}
+            {/* Primary Record Button (Tablet only) */}
             <button
               onClick={() => onOpenRecordModal('electricity')}
               className="hidden sm:flex md:hidden items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs active:scale-95 transition-all cursor-pointer"

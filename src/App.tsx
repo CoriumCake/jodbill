@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Zap, 
   Droplets, 
@@ -11,7 +11,7 @@ import {
   Eye,
   Edit3
 } from 'lucide-react';
-import type { MeterReading, UserSettings, MeterType, UserRole } from './types';
+import type { MeterReading, UserSettings, MeterType, UserRole, AuthUser, SyncStatus } from './types';
 import { 
   loadReadings, 
   loadReadingsAsync,
@@ -28,6 +28,11 @@ import { calculateCycleSummary } from './utils/projection';
 import { startProductTour } from './utils/tour';
 import { checkUrlForShare, clearShareUrlParams } from './utils/shareService';
 import { preloadOCRWorker } from './utils/ocrService';
+import { 
+  subscribeToAuth, 
+  pushUserDataToCloud, 
+  fetchUserDataFromCloud 
+} from './utils/authService';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
@@ -39,11 +44,18 @@ import { RecordMeterModal } from './components/RecordMeterModal';
 import { SettingsModal } from './components/SettingsModal';
 import { BillSlipModal } from './components/BillSlipModal';
 import { ShareModal } from './components/ShareModal';
+import { AuthModal } from './components/AuthModal';
 
 export function App() {
   const [readings, setReadings] = useState<MeterReading[]>(() => loadReadings());
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'simulator'>('dashboard');
+
+  // Cloud Auth & Sync state
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('unauthenticated');
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Role permissions: 'owner' | 'editor' | 'viewer'
   const currentRole: UserRole = settings.currentRole || 'owner';
@@ -56,14 +68,64 @@ export function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync state to LocalStorage & IndexedDB on changes
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  }, []);
+
+  // Sync state to LocalStorage & IndexedDB on changes + Cloud Firestore
   useEffect(() => {
     saveReadings(readings);
-  }, [readings]);
+    if (user) {
+      setSyncStatus('syncing');
+      pushUserDataToCloud(user.uid, { readings, settings })
+        .then((ok) => {
+          if (ok) {
+            setSyncStatus('synced');
+            setLastSyncedAt(new Date());
+          }
+        })
+        .catch(() => setSyncStatus('error'));
+    }
+  }, [readings, user, settings]);
 
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
+
+  // Handle Cloud Sync on User Authentication Change
+  useEffect(() => {
+    const unsubscribe = subscribeToAuth((currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setSyncStatus('syncing');
+        fetchUserDataFromCloud(currentUser.uid).then((cloudData) => {
+          if (cloudData) {
+            if (cloudData.readings && cloudData.readings.length > 0) {
+              setReadings(cloudData.readings);
+              saveReadings(cloudData.readings);
+            }
+            if (cloudData.settings) {
+              setSettings((prev) => {
+                const merged = { ...prev, ...cloudData.settings };
+                saveSettings(merged);
+                return merged;
+              });
+            }
+            showToast(`☁️ ดึงข้อมูลคลาวด์ของ ${currentUser.displayName || 'Google'} สำเร็จ`);
+          }
+          setSyncStatus('synced');
+          setLastSyncedAt(new Date());
+        }).catch(() => {
+          setSyncStatus('synced');
+        });
+      } else {
+        setSyncStatus('unauthenticated');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [showToast]);
 
   // Async IndexedDB hydration (guarantees no data loss even after heavy sessions)
   useEffect(() => {
@@ -71,7 +133,6 @@ export function App() {
       if (idbReadings && idbReadings.length > 0) {
         setReadings((prev) => {
           if (prev.length === 0) return idbReadings;
-          // Merge unique readings by ID
           const existingIds = new Set(prev.map((r) => r.id));
           const missing = idbReadings.filter((r) => !existingIds.has(r.id));
           return missing.length > 0 ? [...prev, ...missing] : prev;
@@ -115,7 +176,7 @@ export function App() {
         })`
       );
     }
-  }, []);
+  }, [settings, showToast]);
 
   // First-time tour check
   useEffect(() => {
@@ -127,11 +188,6 @@ export function App() {
       return () => clearTimeout(timer);
     }
   }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
 
   const cycleSummary = useMemo(() => {
     return calculateCycleSummary(readings, settings);
@@ -223,6 +279,40 @@ export function App() {
     }, 100);
   };
 
+  const handleForceSyncNow = async () => {
+    if (!user) return;
+    setSyncStatus('syncing');
+    const ok = await pushUserDataToCloud(user.uid, { readings, settings });
+    if (ok) {
+      setSyncStatus('synced');
+      setLastSyncedAt(new Date());
+    } else {
+      setSyncStatus('error');
+      throw new Error('Sync failed');
+    }
+  };
+
+  const handlePullCloudData = async () => {
+    if (!user) return;
+    setSyncStatus('syncing');
+    const cloudData = await fetchUserDataFromCloud(user.uid);
+    if (cloudData) {
+      if (cloudData.readings && cloudData.readings.length > 0) {
+        setReadings(cloudData.readings);
+        saveReadings(cloudData.readings);
+      }
+      if (cloudData.settings) {
+        const merged = { ...settings, ...cloudData.settings };
+        setSettings(merged);
+        saveSettings(merged);
+      }
+      setSyncStatus('synced');
+      setLastSyncedAt(new Date());
+    } else {
+      setSyncStatus('synced');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-row selection:bg-amber-100 selection:text-amber-900">
       {/* Desktop Left Sidebar */}
@@ -232,12 +322,15 @@ export function App() {
         settings={settings}
         currentRole={currentRole}
         readingsCount={readings.length}
+        user={user}
+        syncStatus={syncStatus}
         onOpenRecordModal={openRecordModal}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenShare={() => setIsShareModalOpen(true)}
         onOpenBillSlip={() => setIsBillSlipOpen(true)}
         onExportCSV={handleExportCSV}
         onStartTour={handleStartTour}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -263,12 +356,15 @@ export function App() {
           setActiveTab={setActiveTab}
           settings={settings}
           currentRole={currentRole}
+          user={user}
+          syncStatus={syncStatus}
           onOpenRecordModal={openRecordModal}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenShare={() => setIsShareModalOpen(true)}
           onOpenBillSlip={() => setIsBillSlipOpen(true)}
           onExportCSV={handleExportCSV}
           onStartTour={handleStartTour}
+          onOpenAuth={() => setIsAuthModalOpen(true)}
         />
 
         {/* Dynamic Page Views */}
@@ -416,6 +512,18 @@ export function App() {
       </div>
 
       {/* Modals */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        user={user}
+        syncStatus={syncStatus}
+        lastSyncedAt={lastSyncedAt}
+        onSyncNow={handleForceSyncNow}
+        onPullCloudData={handlePullCloudData}
+        onAuthChange={(u) => setUser(u)}
+        showToast={showToast}
+      />
+
       <RecordMeterModal
         isOpen={isRecordModalOpen}
         onClose={() => setIsRecordModalOpen(false)}
