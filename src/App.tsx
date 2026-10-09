@@ -8,7 +8,6 @@ import {
   Sparkles,
   RotateCcw,
   Camera,
-  Share2,
   Eye,
   Edit3
 } from 'lucide-react';
@@ -29,7 +28,9 @@ import { calculateCycleSummary } from './utils/projection';
 import { startProductTour } from './utils/tour';
 import { checkUrlForShare, clearShareUrlParams } from './utils/shareService';
 import { preloadOCRWorker } from './utils/ocrService';
+import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { BottomNav } from './components/BottomNav';
 import { HeroRealtimeCards } from './components/HeroRealtimeCards';
 import { ChartsSection } from './components/ChartsSection';
 import { HistoryTable } from './components/HistoryTable';
@@ -122,7 +123,7 @@ export function App() {
     if (!tourDone) {
       const timer = setTimeout(() => {
         startProductTour();
-      }, 500);
+      }, 600);
       return () => clearTimeout(timer);
     }
   }, []);
@@ -223,28 +224,14 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col selection:bg-amber-100 selection:text-amber-900">
-      {/* Viewer Notice Header Banner if in Read-Only Mode */}
-      {currentRole === 'viewer' && (
-        <div className="bg-amber-500/10 border-b border-amber-200/80 px-4 py-2 text-center text-xs text-amber-900 flex items-center justify-center gap-2">
-          <Eye className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-          <span>คุณกำลังเปิดดูในโหมด <strong>"ดูอย่างเดียว (Viewer)"</strong></span>
-          <button
-            type="button"
-            onClick={() => setIsShareModalOpen(true)}
-            className="underline font-bold text-amber-800 hover:text-amber-950 cursor-pointer ml-1"
-          >
-            ใส่รหัส PIN เพื่อร่วมจดมิเตอร์
-          </button>
-        </div>
-      )}
-
-      {/* Header */}
-      <Header
+    <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-row selection:bg-amber-100 selection:text-amber-900">
+      {/* Desktop Left Sidebar */}
+      <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         settings={settings}
         currentRole={currentRole}
+        readingsCount={readings.length}
         onOpenRecordModal={openRecordModal}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenShare={() => setIsShareModalOpen(true)}
@@ -253,162 +240,180 @@ export function App() {
         onStartTour={handleStartTour}
       />
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        {/* ================= TAB 1: DASHBOARD ================= */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-5">
-            {/* Empty State Welcome Card (Shown only when readings count is 0) */}
-            {readings.length === 0 && (
-              <div className="clean-card p-6 sm:p-8 text-center bg-white border-dashed border-2 border-slate-200 space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
-                  <Camera className="w-6 h-6" />
-                </div>
-                <div className="max-w-md mx-auto space-y-1">
-                  <h3 className="text-base font-bold text-slate-900">
-                    ยังไม่มีข้อมูลมิเตอร์ในระบบ
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    เริ่มต้นด้วยการถ่ายรูปหรือพิมพ์เลขหน้าปัดมิเตอร์ไฟฟ้า/น้ำรอบปัจจุบันเพื่อเริ่มคำนวณบิล
-                  </p>
-                </div>
-                <div className="flex items-center justify-center gap-3 pt-1">
-                  {currentRole !== 'viewer' ? (
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Viewer Notice Header Banner if in Read-Only Mode */}
+        {currentRole === 'viewer' && (
+          <div className="bg-amber-500/10 border-b border-amber-200/80 px-4 py-2 text-center text-xs text-amber-900 flex items-center justify-center gap-2">
+            <Eye className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+            <span>คุณกำลังเปิดดูในโหมด <strong>"ดูอย่างเดียว (Viewer)"</strong></span>
+            <button
+              type="button"
+              onClick={() => setIsShareModalOpen(true)}
+              className="underline font-bold text-amber-800 hover:text-amber-950 cursor-pointer ml-1"
+            >
+              ใส่รหัส PIN เพื่อร่วมจดมิเตอร์
+            </button>
+          </div>
+        )}
+
+        {/* Top Header */}
+        <Header
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          settings={settings}
+          currentRole={currentRole}
+          onOpenRecordModal={openRecordModal}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenShare={() => setIsShareModalOpen(true)}
+          onOpenBillSlip={() => setIsBillSlipOpen(true)}
+          onExportCSV={handleExportCSV}
+          onStartTour={handleStartTour}
+        />
+
+        {/* Dynamic Page Views */}
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8 space-y-6">
+          {/* ================= TAB 1: DASHBOARD ================= */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-5">
+              {/* Empty State Welcome Card (Shown only when readings count is 0) */}
+              {readings.length === 0 && (
+                <div className="clean-card p-6 sm:p-8 text-center bg-white border-dashed border-2 border-slate-200 space-y-4">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                    <Camera className="w-6 h-6" />
+                  </div>
+                  <div className="max-w-md mx-auto space-y-1">
+                    <h3 className="text-base font-bold text-slate-900">
+                      ยังไม่มีข้อมูลมิเตอร์ในระบบ
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      เริ่มต้นด้วยการถ่ายรูปหรือพิมพ์เลขหน้าปัดมิเตอร์ไฟฟ้า/น้ำรอบปัจจุบันเพื่อเริ่มคำนวณบิล
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-3 pt-1">
+                    {currentRole !== 'viewer' ? (
+                      <button
+                        onClick={() => openRecordModal('electricity')}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>จดมิเตอร์ครั้งแรก</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setIsShareModalOpen(true)}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                        <span>ปลดล็อกสิทธิ์เพื่อเริ่มจด</span>
+                      </button>
+                    )}
                     <button
-                      onClick={() => openRecordModal('electricity')}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
+                      onClick={handleLoadDemoData}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs cursor-pointer active:scale-95 transition-all"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>จดมิเตอร์ครั้งแรก</span>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>ลองใส่ข้อมูลตัวอย่าง</span>
                     </button>
-                  ) : (
-                    <button
-                      onClick={() => setIsShareModalOpen(true)}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                      <span>ปลดล็อกสิทธิ์เพื่อเริ่มจด</span>
-                    </button>
-                  )}
-                  <button
-                    onClick={handleLoadDemoData}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs cursor-pointer active:scale-95 transition-all"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>ลองใส่ข้อมูลตัวอย่าง</span>
-                  </button>
+                  </div>
                 </div>
+              )}
+
+              {/* Hero Real-time Cards */}
+              <HeroRealtimeCards
+                summary={cycleSummary}
+                settings={settings}
+                onOpenRecord={openRecordModal}
+                hasReadings={readings.length > 0}
+              />
+
+              {/* Action Shortcuts */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  onClick={() => openRecordModal('electricity')}
+                  className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/60">
+                      <Zap className="w-4 h-4 fill-amber-500" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">ถ่ายรูปมิเตอร์ไฟ</h4>
+                      <span className="text-[11px] text-slate-500">สแกนตัวเลขด้วย OCR</span>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
+                </button>
+
+                <button
+                  onClick={() => openRecordModal('water')}
+                  className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-cyan-50 text-cyan-600 border border-cyan-200/60">
+                      <Droplets className="w-4 h-4 fill-cyan-500" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">ถ่ายรูปมิเตอร์น้ำ</h4>
+                      <span className="text-[11px] text-slate-500">บันทึกค่าน้ำประปา</span>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('simulator')}
+                  className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                      <Calculator className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">คำนวณค่าไฟแอร์</h4>
+                      <span className="text-[11px] text-slate-500">เปิดกี่ ชม. กินไฟกี่บาท</span>
+                    </div>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
+                </button>
               </div>
-            )}
 
-            {/* Hero Real-time Cards */}
-            <HeroRealtimeCards
-              summary={cycleSummary}
-              settings={settings}
-              onOpenRecord={openRecordModal}
-              hasReadings={readings.length > 0}
-            />
-
-            {/* Action Shortcuts */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button
-                onClick={() => openRecordModal('electricity')}
-                className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/60">
-                    <Zap className="w-4 h-4 fill-amber-500" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">ถ่ายรูปมิเตอร์ไฟ</h4>
-                    <span className="text-[11px] text-slate-500">สแกนตัวเลขด้วย OCR</span>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
-              </button>
-
-              <button
-                onClick={() => openRecordModal('water')}
-                className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-cyan-50 text-cyan-600 border border-cyan-200/60">
-                    <Droplets className="w-4 h-4 fill-cyan-500" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">ถ่ายรูปมิเตอร์น้ำ</h4>
-                    <span className="text-[11px] text-slate-500">บันทึกค่าน้ำประปา</span>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
-              </button>
-
-              <button
-                onClick={() => setActiveTab('simulator')}
-                className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                    <Calculator className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">คำนวณค่าไฟแอร์</h4>
-                    <span className="text-[11px] text-slate-500">เปิดกี่ ชม. กินไฟกี่บาท</span>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
-              </button>
+              {/* Interactive Charts */}
+              <ChartsSection readings={readings} settings={settings} />
             </div>
+          )}
 
-            {/* Interactive Charts */}
-            <ChartsSection readings={readings} settings={settings} />
-          </div>
-        )}
+          {/* ================= TAB 2: HISTORY TABLE ================= */}
+          {activeTab === 'history' && (
+            <div className="space-y-5">
+              <HistoryTable
+                readings={readings}
+                settings={settings}
+                currentRole={currentRole}
+                onDeleteReading={handleDeleteReading}
+                onOpenRecord={openRecordModal}
+                onExportCSV={handleExportCSV}
+              />
+            </div>
+          )}
 
-        {/* ================= TAB 2: HISTORY TABLE ================= */}
-        {activeTab === 'history' && (
-          <div className="space-y-5">
-            <HistoryTable
-              readings={readings}
-              settings={settings}
-              currentRole={currentRole}
-              onDeleteReading={handleDeleteReading}
-              onOpenRecord={openRecordModal}
-              onExportCSV={handleExportCSV}
-            />
-          </div>
-        )}
+          {/* ================= TAB 3: APPLIANCE SIMULATOR ================= */}
+          {activeTab === 'simulator' && (
+            <div className="space-y-5">
+              <ApplianceSimulator settings={settings} />
+            </div>
+          )}
+        </main>
 
-        {/* ================= TAB 3: APPLIANCE SIMULATOR ================= */}
-        {activeTab === 'simulator' && (
-          <div className="space-y-5">
-            <ApplianceSimulator settings={settings} />
-          </div>
-        )}
-      </main>
-
-      {/* Floating Mobile Record Button */}
-      {currentRole !== 'viewer' ? (
-        <div className="fixed right-4 bottom-5 z-40 sm:hidden">
-          <button
-            onClick={() => openRecordModal('electricity')}
-            className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-slate-900 text-white font-bold text-xs shadow-lg active:scale-95 transition-transform cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>จดบิล</span>
-          </button>
-        </div>
-      ) : (
-        <div className="fixed right-4 bottom-5 z-40 sm:hidden">
-          <button
-            onClick={() => setIsShareModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-3 rounded-full bg-amber-600 text-white font-bold text-xs shadow-lg active:scale-95 transition-transform cursor-pointer"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>แชร์/ปลดล็อก</span>
-          </button>
-        </div>
-      )}
+        {/* Mobile Bottom Navigation Dock */}
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          currentRole={currentRole}
+          onOpenRecordModal={openRecordModal}
+          onOpenBillSlip={() => setIsBillSlipOpen(true)}
+        />
+      </div>
 
       {/* Modals */}
       <RecordMeterModal
@@ -451,7 +456,7 @@ export function App() {
 
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-medium shadow-lg flex items-center gap-1.5 animate-fade-in">
+        <div className="fixed bottom-20 md:bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-medium shadow-lg flex items-center gap-1.5 animate-fade-in">
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
           <span>{toastMessage}</span>
         </div>
