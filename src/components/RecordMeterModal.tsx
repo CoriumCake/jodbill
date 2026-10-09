@@ -8,11 +8,17 @@ import {
   Sparkles, 
   Check, 
   RotateCw, 
-  CheckCircle2
+  CheckCircle2,
+  Calendar
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { MeterType, MeterReading, UserSettings, OCRProvider } from '../types';
-import { performLocalOCR, performGeminiVisionOCR } from '../utils/ocrService';
+import { 
+  performLocalOCR, 
+  performGeminiVisionOCR, 
+  extractPhotoDate, 
+  preloadOCRWorker 
+} from '../utils/ocrService';
 import { calculateElectricityCost, calculateWaterCost } from '../utils/rateCalculator';
 
 interface RecordMeterModalProps {
@@ -44,6 +50,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
   const [detectedProvider, setDetectedProvider] = useState<OCRProvider>('manual');
   const [ocrConfidence, setOcrConfidence] = useState<number | undefined>(undefined);
   const [ocrResultMessage, setOcrResultMessage] = useState<string | null>(null);
+  const [extractedDateNotice, setExtractedDateNotice] = useState<string | null>(null);
 
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
@@ -75,8 +82,12 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       setIsCameraActive(false);
       setIsProcessingOCR(false);
       setOcrResultMessage(null);
+      setExtractedDateNotice(null);
       setDetectedProvider('manual');
       setOcrConfidence(undefined);
+
+      // Pre-warm OCR worker in background
+      preloadOCRWorker();
     } else {
       stopCamera();
     }
@@ -140,9 +151,20 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Automatically extract photo timestamp from EXIF metadata
+    try {
+      const photoDate = await extractPhotoDate(file);
+      if (photoDate) {
+        setTimestamp(photoDate);
+        setExtractedDateNotice(`ดึงเวลาถ่ายภาพอัตโนมัติ: ${photoDate.replace('T', ' ')}`);
+      }
+    } catch (err) {
+      console.warn('Could not extract EXIF date:', err);
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -513,13 +535,24 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
           {/* Date & Notes Fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div>
-              <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                วันและเวลาที่จด
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-medium text-slate-600 block">
+                  วันและเวลาที่จด
+                </label>
+                {extractedDateNotice && (
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/80 flex items-center gap-1 font-medium animate-fade-in">
+                    <Calendar className="w-2.5 h-2.5 text-emerald-600" />
+                    ดึงจากรูปภาพอัตโนมัติ
+                  </span>
+                )}
+              </div>
               <input
                 type="datetime-local"
                 value={timestamp}
-                onChange={(e) => setTimestamp(e.target.value)}
+                onChange={(e) => {
+                  setTimestamp(e.target.value);
+                  setExtractedDateNotice(null);
+                }}
                 className="w-full bg-slate-50 text-xs text-slate-800 px-3 py-2 rounded-lg border border-slate-200 focus:border-slate-400 focus:outline-none"
               />
             </div>

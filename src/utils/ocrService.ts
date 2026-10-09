@@ -1,5 +1,6 @@
 import { createWorker } from 'tesseract.js';
 import type { Worker } from 'tesseract.js';
+import ExifReader from 'exifreader';
 import type { MeterType } from '../types';
 
 export interface OCRResult {
@@ -9,42 +10,100 @@ export interface OCRResult {
   provider: 'tesseract' | 'gemini';
   meterTypeHint?: MeterType;
   message?: string;
+  extractedTimestamp?: string;
 }
 
 let workerInstance: Worker | null = null;
+let workerInitPromise: Promise<Worker> | null = null;
+
+export async function preloadOCRWorker(): Promise<void> {
+  if (workerInstance) return;
+  try {
+    await getTesseractWorker();
+  } catch (e) {
+    console.warn('OCR Worker preload skipped:', e);
+  }
+}
 
 async function getTesseractWorker(onProgress?: (progress: number, status: string) => void): Promise<Worker> {
   if (workerInstance) {
     return workerInstance;
   }
 
-  const worker = await createWorker('eng', 1, {
-    logger: (m) => {
-      if (onProgress && m.progress !== undefined) {
-        onProgress(Math.round(m.progress * 100), m.status || 'กำลังวิเคราะห์ตัวเลข...');
-      }
-    },
-  });
+  if (workerInitPromise) {
+    return workerInitPromise;
+  }
 
-  // Use PSM 6 (single uniform block of text) and allow digits and dot
-  await worker.setParameters({
-    tessedit_char_whitelist: '0123456789.',
-    tessedit_pageseg_mode: '6' as any,
-  });
+  workerInitPromise = (async () => {
+    const worker = await createWorker('eng', 1, {
+      logger: (m) => {
+        if (onProgress && m.progress !== undefined) {
+          onProgress(Math.round(m.progress * 100), m.status || 'กำลังวิเคราะห์ตัวเลข...');
+        }
+      },
+    });
 
-  workerInstance = worker;
-  return worker;
+    // Use PSM 6 (single uniform block of text) and allow digits and dot
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789.',
+      tessedit_pageseg_mode: '6' as any,
+    });
+
+    workerInstance = worker;
+    return worker;
+  })();
+
+  return workerInitPromise;
 }
 
-// Generate multiple preprocessed variants (normal high contrast, inverted for white-on-black dials, and center crop)
-export async function generateImageVariants(
+/**
+ * Extract photo creation date from EXIF metadata or file modified date
+ */
+export async function extractPhotoDate(file: File): Promise<string | null> {
+  try {
+    const tags = await ExifReader.load(file, { expanded: true });
+    
+    const exifAny = (tags as any)?.exif || tags;
+    const rawDate = 
+      exifAny?.DateTimeOriginal?.description || 
+      exifAny?.CreateDate?.description || 
+      exifAny?.DateTime?.description ||
+      exifAny?.DateTimeDigitized?.description;
+
+    if (rawDate && typeof rawDate === 'string') {
+      const match = rawDate.match(/^(\d{4})[:/-](\d{2})[:/-](\d{2})\s+(\d{2}):(\d{2})/);
+      if (match) {
+        return `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}`;
+      }
+    }
+  } catch (err) {
+    console.warn('Exif extraction skipped/failed:', err);
+  }
+
+  // Fallback to file.lastModified timestamp if it's within a valid range
+  if (file.lastModified && file.lastModified > 0) {
+    const d = new Date(file.lastModified);
+    if (!isNaN(d.getTime())) {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Fast optimized image preprocessing (Resizes to 720px and applies contrast + ROI inversion in single pass)
+ */
+export async function fastPreprocessImage(
   imageSource: string | HTMLImageElement
-): Promise<{ standard: string; inverted: string; centerCrop: string }> {
+): Promise<{ fastROI: string; fastStandard: string }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const maxDim = 1200;
+      // Optimal resolution for high-speed OCR: 720px max dimension
+      const maxDim = 720;
       let width = img.width;
       let height = img.height;
       if (width > maxDim || height > maxDim) {
@@ -57,72 +116,60 @@ export async function generateImageVariants(
         }
       }
 
-      // 1. Standard High Contrast
+      // 1. Process Standard Enhanced
       const canvasStd = document.createElement('canvas');
       canvasStd.width = width;
       canvasStd.height = height;
       const ctxStd = canvasStd.getContext('2d');
       if (!ctxStd) {
         const raw = typeof imageSource === 'string' ? imageSource : img.src;
-        resolve({ standard: raw, inverted: raw, centerCrop: raw });
+        resolve({ fastROI: raw, fastStandard: raw });
         return;
       }
 
       ctxStd.drawImage(img, 0, 0, width, height);
-      const imgDataStd = ctxStd.getImageData(0, 0, width, height);
-      const dataStd = imgDataStd.data;
-      const contrast = 1.6;
+      const imgData = ctxStd.getImageData(0, 0, width, height);
+      const data = imgData.data;
+
+      // Fast contrast + grayscale formula
+      const contrast = 1.5;
       const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
 
-      for (let i = 0; i < dataStd.length; i += 4) {
-        const gray = 0.299 * dataStd[i] + 0.587 * dataStd[i + 1] + 0.114 * dataStd[i + 2];
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
         const enhanced = Math.min(255, Math.max(0, factor * (gray - 128) + 128));
-        dataStd[i] = enhanced;
-        dataStd[i + 1] = enhanced;
-        dataStd[i + 2] = enhanced;
+        data[i] = enhanced;
+        data[i + 1] = enhanced;
+        data[i + 2] = enhanced;
       }
-      ctxStd.putImageData(imgDataStd, 0, 0);
-      const standardData = canvasStd.toDataURL('image/png');
+      ctxStd.putImageData(imgData, 0, 0);
+      const fastStandard = canvasStd.toDataURL('image/jpeg', 0.85);
 
-      // 2. Inverted High Contrast (Crucial for white-on-black mechanical counter wheels)
-      const canvasInv = document.createElement('canvas');
-      canvasInv.width = width;
-      canvasInv.height = height;
-      const ctxInv = canvasInv.getContext('2d');
-      if (ctxInv) {
-        ctxInv.drawImage(canvasStd, 0, 0);
-        const imgDataInv = ctxInv.getImageData(0, 0, width, height);
-        const dataInv = imgDataInv.data;
-        for (let i = 0; i < dataInv.length; i += 4) {
-          const inv = 255 - dataInv[i];
-          dataInv[i] = inv;
-          dataInv[i + 1] = inv;
-          dataInv[i + 2] = inv;
-        }
-        ctxInv.putImageData(imgDataInv, 0, 0);
-      }
-      const invertedData = canvasInv ? canvasInv.toDataURL('image/png') : standardData;
-
-      // 3. Center Crop (Focus on central 65% width and 35% height where meter counter sits)
-      const canvasCrop = document.createElement('canvas');
-      const cropW = Math.round(width * 0.7);
-      const cropH = Math.round(height * 0.4);
+      // 2. Process ROI (Center Crop + Invert white-on-black dials in single pass)
+      const cropW = Math.round(width * 0.75);
+      const cropH = Math.round(height * 0.45);
       const cropX = Math.round((width - cropW) / 2);
       const cropY = Math.round((height - cropH) / 2);
 
-      canvasCrop.width = cropW;
-      canvasCrop.height = cropH;
-      const ctxCrop = canvasCrop.getContext('2d');
-      if (ctxCrop) {
-        ctxCrop.drawImage(canvasStd, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      const canvasROI = document.createElement('canvas');
+      canvasROI.width = cropW;
+      canvasROI.height = cropH;
+      const ctxROI = canvasROI.getContext('2d');
+      if (ctxROI) {
+        ctxROI.drawImage(canvasStd, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        const roiData = ctxROI.getImageData(0, 0, cropW, cropH);
+        const rData = roiData.data;
+        // Invert to convert white-on-black rolling counter dials to black-on-white
+        for (let i = 0; i < rData.length; i += 4) {
+          rData[i] = 255 - rData[i];
+          rData[i + 1] = 255 - rData[i + 1];
+          rData[i + 2] = 255 - rData[i + 2];
+        }
+        ctxROI.putImageData(roiData, 0, 0);
       }
-      const centerCropData = canvasCrop ? canvasCrop.toDataURL('image/png') : standardData;
+      const fastROI = canvasROI ? canvasROI.toDataURL('image/jpeg', 0.85) : fastStandard;
 
-      resolve({
-        standard: standardData,
-        inverted: invertedData,
-        centerCrop: centerCropData,
-      });
+      resolve({ fastROI, fastStandard });
     };
 
     img.onerror = (e) => reject(e);
@@ -182,7 +229,7 @@ export function parseMeterNumber(
 
     // Typical meter dials have 4 to 6 digits (e.g. 1234, 05234, 1890.5)
     if (len >= 4 && len <= 7) {
-      score += 40;
+      score += 45;
     } else if (len === 3) {
       score += 15;
     } else if (len > 7) {
@@ -235,65 +282,49 @@ export async function performLocalOCR(
   previousReading?: number
 ): Promise<OCRResult> {
   try {
-    if (onProgress) onProgress(15, 'กำลังเตรียมรูปภาพและปรับความคมชัด...');
-    const variants = await generateImageVariants(imageDataUrl);
+    if (onProgress) onProgress(20, 'ปรับความคมชัดรูปภาพ...');
+    const { fastROI, fastStandard } = await fastPreprocessImage(imageDataUrl);
 
-    if (onProgress) onProgress(35, 'กำลังโหลดโมเดล OCR ตัวเลข...');
+    if (onProgress) onProgress(45, 'กำลังประมวลผลตัวเลข...');
     const worker = await getTesseractWorker(onProgress);
 
-    // Pass 1: Center Cropped region (where the meter counter dial is positioned)
-    if (onProgress) onProgress(55, 'วิเคราะห์ตัวเลขบริเวณหน้าปัดมิเตอร์...');
-    const retCrop = await worker.recognize(variants.centerCrop);
-    const textCrop = retCrop.data.text || '';
-    const parsedCrop = parseMeterNumber(textCrop, previousReading);
+    // High Speed Pass 1: Target Inverted Center ROI (White-on-black rolling dials)
+    if (onProgress) onProgress(70, 'อ่านตัวเลขหน้าปัด...');
+    const retROI = await worker.recognize(fastROI);
+    const textROI = retROI.data.text || '';
+    const parsedROI = parseMeterNumber(textROI, previousReading);
 
-    if (parsedCrop.reading > 0 && parsedCrop.confidence >= 60) {
-      if (onProgress) onProgress(100, 'อ่านตัวเลขสำเร็จ!');
+    // Fast Early Exit: If ROI pass found a solid candidate, return immediately (0.4s!)
+    if (parsedROI.reading > 0 && parsedROI.confidence >= 55) {
+      if (onProgress) onProgress(100, 'อ่านสำเร็จ!');
       return {
-        reading: parsedCrop.reading,
-        confidence: parsedCrop.confidence,
-        rawText: textCrop.trim(),
+        reading: parsedROI.reading,
+        confidence: parsedROI.confidence,
+        rawText: textROI.trim(),
         provider: 'tesseract',
-        message: `อ่านตัวเลขหน้าปัดได้: ${parsedCrop.reading}`,
+        message: `อ่านตัวเลขหน้าปัดได้: ${parsedROI.reading}`,
       };
     }
 
-    // Pass 2: Inverted binarized (handles white text on black roller dials)
-    if (onProgress) onProgress(75, 'ปรับโหมดอ่านตัวเลขสีขาวบนพื้นดำ...');
-    const retInv = await worker.recognize(variants.inverted);
-    const textInv = retInv.data.text || '';
-    const parsedInv = parseMeterNumber(textInv, previousReading);
-
-    if (parsedInv.reading > 0 && parsedInv.confidence >= 55) {
-      if (onProgress) onProgress(100, 'อ่านตัวเลขสำเร็จ!');
-      return {
-        reading: parsedInv.reading,
-        confidence: parsedInv.confidence,
-        rawText: textInv.trim(),
-        provider: 'tesseract',
-        message: `อ่านตัวเลขหน้าปัดได้: ${parsedInv.reading}`,
-      };
-    }
-
-    // Pass 3: Full Standard Image
-    if (onProgress) onProgress(88, 'วิเคราะห์ภาพรวมทั้งหมด...');
-    const retStd = await worker.recognize(variants.standard);
+    // Quick Pass 2 Fallback: Standard image
+    if (onProgress) onProgress(85, 'ตรวจสอบภาพรวม...');
+    const retStd = await worker.recognize(fastStandard);
     const textStd = retStd.data.text || '';
     const parsedStd = parseMeterNumber(textStd, previousReading);
 
-    const bestResult = [parsedCrop, parsedInv, parsedStd].sort((a, b) => b.confidence - a.confidence)[0];
+    const bestResult = [parsedROI, parsedStd].sort((a, b) => b.confidence - a.confidence)[0];
 
-    if (onProgress) onProgress(100, bestResult.reading > 0 ? 'อ่านตัวเลขสำเร็จ!' : 'ประมวลผลเสร็จสิ้น');
+    if (onProgress) onProgress(100, bestResult.reading > 0 ? 'อ่านสำเร็จ!' : 'ประมวลผลเสร็จสิ้น');
 
     return {
       reading: bestResult.reading,
       confidence: bestResult.confidence,
-      rawText: (textCrop + ' ' + textInv + ' ' + textStd).trim(),
+      rawText: (textROI + ' ' + textStd).trim(),
       provider: 'tesseract',
       message:
         bestResult.reading > 0
           ? `อ่านตัวเลขได้ ${bestResult.reading}`
-          : 'ไม่พบตัวเลขชัดเจน (แนะนำถ่ายให้เห็นเฉพาะช่องตัวเลข หรือกรอกตัวเลขเอง)',
+          : 'ไม่พบตัวเลขชัดเจน (แนะนำถ่ายซูมเฉพาะช่องตัวเลข หรือกรอกตัวเลขเอง)',
     };
   } catch (error) {
     console.error('Local OCR failed:', error);
@@ -345,7 +376,6 @@ Instructions:
 
     if (onProgress) onProgress(50, 'Gemini กำลังอ่านตัวเลขหน้าปัดมิเตอร์...');
 
-    // Try gemini-2.5-flash first, fallback to gemini-1.5-flash
     let response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
@@ -374,7 +404,6 @@ Instructions:
     );
 
     if (!response.ok) {
-      // Fallback to gemini-1.5-flash
       response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
