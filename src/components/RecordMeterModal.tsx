@@ -17,7 +17,8 @@ import {
   performLocalOCR, 
   performGeminiVisionOCR, 
   extractPhotoDate, 
-  preloadOCRWorker 
+  preloadOCRWorker,
+  scanLiveCameraFrame
 } from '../utils/ocrService';
 import { createThumbnail } from '../utils/storage';
 import { calculateElectricityCost, calculateWaterCost } from '../utils/rateCalculator';
@@ -52,6 +53,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
   const [ocrConfidence, setOcrConfidence] = useState<number | undefined>(undefined);
   const [ocrResultMessage, setOcrResultMessage] = useState<string | null>(null);
   const [extractedDateNotice, setExtractedDateNotice] = useState<string | null>(null);
+  const [liveReading, setLiveReading] = useState<{ reading: number; confidence: number } | null>(null);
 
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
@@ -84,6 +86,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       setIsProcessingOCR(false);
       setOcrResultMessage(null);
       setExtractedDateNotice(null);
+      setLiveReading(null);
       setDetectedProvider('manual');
       setOcrConfidence(undefined);
 
@@ -99,6 +102,37 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       stopCamera();
     };
   }, []);
+
+  // Real-time live camera frame scanner loop (Runs every ~350ms while camera is pointing at meter)
+  useEffect(() => {
+    if (!isCameraActive) {
+      setLiveReading(null);
+      return;
+    }
+
+    let isCancelled = false;
+    let isScanning = false;
+
+    const interval = setInterval(async () => {
+      if (isCancelled || isScanning || !videoRef.current || videoRef.current.readyState < 2) return;
+      isScanning = true;
+      try {
+        const res = await scanLiveCameraFrame(videoRef.current, previousValue);
+        if (!isCancelled && res && res.reading > 0) {
+          setLiveReading(res);
+        }
+      } catch {
+        // Ignore live frame glitches
+      } finally {
+        isScanning = false;
+      }
+    }, 350);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [isCameraActive, previousValue]);
 
   const startCamera = async () => {
     stopCamera();
@@ -356,10 +390,32 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
               <div className="relative rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center">
                 <video ref={videoRef} className="w-full h-full object-cover" playsInline autoPlay muted />
                 
+                {/* Live Real-time Detection Floating Action */}
+                {liveReading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReadingInput(liveReading.reading.toString());
+                      setDetectedProvider('tesseract');
+                      setOcrConfidence(liveReading.confidence);
+                      setOcrResultMessage(`⚡ สแกนสดพบเลข: ${liveReading.reading}`);
+                      stopCamera();
+                    }}
+                    className="absolute top-3 inset-x-3 mx-auto max-w-sm py-2 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-xl flex items-center justify-center gap-1.5 cursor-pointer z-10 active:scale-95 transition-all border border-emerald-300 animate-pulse"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-white text-white" />
+                    <span>⚡ สแกนสดพบ: <strong>{liveReading.reading}</strong> (แตะเพื่อใช้ทันที)</span>
+                  </button>
+                )}
+
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-3/4 h-20 border-2 border-dashed border-white/80 rounded-lg bg-black/20 flex items-center justify-center">
-                    <span className="text-[10px] text-white bg-black/60 px-2 py-0.5 rounded">
-                      จัดตัวเลขมิเตอร์ให้อยู่ในกรอบนี้
+                  <div className={`w-3/4 h-20 border-2 rounded-lg bg-black/20 flex items-center justify-center transition-all ${
+                    liveReading ? 'border-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.7)]' : 'border-dashed border-white/80'
+                  }`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded transition-all ${
+                      liveReading ? 'bg-emerald-600 text-white font-bold' : 'text-white bg-black/60'
+                    }`}>
+                      {liveReading ? `ตรวจพบ ${liveReading.reading}` : 'จัดตัวเลขมิเตอร์ให้อยู่ในกรอบนี้'}
                     </span>
                   </div>
                 </div>
@@ -369,7 +425,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                     type="button"
                     onClick={flipCamera}
                     title="สลับกล้อง"
-                    className="p-2 rounded-full bg-black/60 text-white border border-white/20 hover:bg-black/80"
+                    className="p-2 rounded-full bg-black/60 text-white border border-white/20 hover:bg-black/80 cursor-pointer"
                   >
                     <RotateCw className="w-3.5 h-3.5" />
                   </button>
@@ -384,7 +440,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                   <button
                     type="button"
                     onClick={stopCamera}
-                    className="p-2 rounded-full bg-black/60 text-white border border-white/20 hover:bg-black/80"
+                    className="p-2 rounded-full bg-black/60 text-white border border-white/20 hover:bg-black/80 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>

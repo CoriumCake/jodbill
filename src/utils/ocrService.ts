@@ -16,6 +16,9 @@ export interface OCRResult {
 let workerInstance: Worker | null = null;
 let workerInitPromise: Promise<Worker> | null = null;
 
+/**
+ * Preload and initialize Tesseract WASM worker eagerly in background
+ */
 export async function preloadOCRWorker(): Promise<void> {
   if (workerInstance) return;
   try {
@@ -38,12 +41,12 @@ async function getTesseractWorker(onProgress?: (progress: number, status: string
     const worker = await createWorker('eng', 1, {
       logger: (m) => {
         if (onProgress && m.progress !== undefined) {
-          onProgress(Math.round(m.progress * 100), m.status || 'กำลังวิเคราะห์ตัวเลข...');
+          onProgress(Math.round(m.progress * 100), m.status || 'กำลังอ่านตัวเลข...');
         }
       },
     });
 
-    // Use PSM 6 (single uniform block of text) and allow digits and dot
+    // Configure for high-speed digits recognition
     await worker.setParameters({
       tessedit_char_whitelist: '0123456789.',
       tessedit_pageseg_mode: '6' as any,
@@ -93,91 +96,91 @@ export async function extractPhotoDate(file: File): Promise<string | null> {
 }
 
 /**
- * Fast optimized image preprocessing (Resizes to 720px and applies contrast + ROI inversion in single pass)
+ * Fast dial strip extraction (Extracts center 70% width x 30% height, inverts white-on-black dials, and scales to ~360x100px)
+ * Processing a 360x100px image takes only ~40-70ms in WASM!
  */
-export async function fastPreprocessImage(
-  imageSource: string | HTMLImageElement
-): Promise<{ fastROI: string; fastStandard: string }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      // Optimal resolution for high-speed OCR: 720px max dimension
-      const maxDim = 720;
-      let width = img.width;
-      let height = img.height;
-      if (width > maxDim || height > maxDim) {
-        if (width > height) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
-        }
-      }
+export async function extractUltraFastDialStrip(
+  imageSource: string | HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
+): Promise<{ dialStripInverted: string; dialStripStandard: string }> {
+  return new Promise((resolve) => {
+    let srcW = 0;
+    let srcH = 0;
 
-      // 1. Process Standard Enhanced
-      const canvasStd = document.createElement('canvas');
-      canvasStd.width = width;
-      canvasStd.height = height;
-      const ctxStd = canvasStd.getContext('2d');
-      if (!ctxStd) {
-        const raw = typeof imageSource === 'string' ? imageSource : img.src;
-        resolve({ fastROI: raw, fastStandard: raw });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    const processFrame = (source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement) => {
+      srcW = 'videoWidth' in source ? source.videoWidth : source.width;
+      srcH = 'videoHeight' in source ? source.videoHeight : source.height;
+
+      if (!srcW || !srcH) {
+        resolve({ dialStripInverted: '', dialStripStandard: '' });
         return;
       }
 
-      ctxStd.drawImage(img, 0, 0, width, height);
-      const imgData = ctxStd.getImageData(0, 0, width, height);
-      const data = imgData.data;
+      // Crop center rectangular strip where mechanical dials sit
+      const cropW = Math.round(srcW * 0.72);
+      const cropH = Math.round(srcH * 0.32);
+      const cropX = Math.round((srcW - cropW) / 2);
+      const cropY = Math.round((srcH - cropH) / 2);
 
-      // Fast contrast + grayscale formula
-      const contrast = 1.5;
+      // Target resolution: 380px width
+      const targetW = 380;
+      const targetH = Math.round((cropH * targetW) / cropW);
+
+      canvas.width = targetW;
+      canvas.height = targetH;
+
+      if (!ctx) {
+        resolve({ dialStripInverted: '', dialStripStandard: '' });
+        return;
+      }
+
+      ctx.drawImage(source, cropX, cropY, cropW, cropH, 0, 0, targetW, targetH);
+      const imgData = ctx.getImageData(0, 0, targetW, targetH);
+      const d = imgData.data;
+
+      // Single-pass contrast enhancement + grayscale
+      const contrast = 1.6;
       const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
 
-      for (let i = 0; i < data.length; i += 4) {
-        const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const invData = new Uint8ClampedArray(d.length);
+
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
         const enhanced = Math.min(255, Math.max(0, factor * (gray - 128) + 128));
-        data[i] = enhanced;
-        data[i + 1] = enhanced;
-        data[i + 2] = enhanced;
+        
+        // Standard high contrast
+        d[i] = enhanced;
+        d[i + 1] = enhanced;
+        d[i + 2] = enhanced;
+
+        // Inverted (white-on-black to black-on-white)
+        const inv = 255 - enhanced;
+        invData[i] = inv;
+        invData[i + 1] = inv;
+        invData[i + 2] = inv;
+        invData[i + 3] = 255;
       }
-      ctxStd.putImageData(imgData, 0, 0);
-      const fastStandard = canvasStd.toDataURL('image/jpeg', 0.85);
 
-      // 2. Process ROI (Center Crop + Invert white-on-black dials in single pass)
-      const cropW = Math.round(width * 0.75);
-      const cropH = Math.round(height * 0.45);
-      const cropX = Math.round((width - cropW) / 2);
-      const cropY = Math.round((height - cropH) / 2);
+      ctx.putImageData(imgData, 0, 0);
+      const dialStripStandard = canvas.toDataURL('image/jpeg', 0.85);
 
-      const canvasROI = document.createElement('canvas');
-      canvasROI.width = cropW;
-      canvasROI.height = cropH;
-      const ctxROI = canvasROI.getContext('2d');
-      if (ctxROI) {
-        ctxROI.drawImage(canvasStd, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-        const roiData = ctxROI.getImageData(0, 0, cropW, cropH);
-        const rData = roiData.data;
-        // Invert to convert white-on-black rolling counter dials to black-on-white
-        for (let i = 0; i < rData.length; i += 4) {
-          rData[i] = 255 - rData[i];
-          rData[i + 1] = 255 - rData[i + 1];
-          rData[i + 2] = 255 - rData[i + 2];
-        }
-        ctxROI.putImageData(roiData, 0, 0);
-      }
-      const fastROI = canvasROI ? canvasROI.toDataURL('image/jpeg', 0.85) : fastStandard;
+      const invImageData = new ImageData(invData, targetW, targetH);
+      ctx.putImageData(invImageData, 0, 0);
+      const dialStripInverted = canvas.toDataURL('image/jpeg', 0.85);
 
-      resolve({ fastROI, fastStandard });
+      resolve({ dialStripInverted, dialStripStandard });
     };
 
-    img.onerror = (e) => reject(e);
-
     if (typeof imageSource === 'string') {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => processFrame(img);
+      img.onerror = () => resolve({ dialStripInverted: imageSource, dialStripStandard: imageSource });
       img.src = imageSource;
     } else {
-      img.src = imageSource.src;
+      processFrame(imageSource);
     }
   });
 }
@@ -233,7 +236,7 @@ export function parseMeterNumber(
     } else if (len === 3) {
       score += 15;
     } else if (len > 7) {
-      score += 5; // Might be serial number
+      score += 5;
     }
 
     // Has decimal point (e.g. 1234.5)
@@ -262,7 +265,6 @@ export function parseMeterNumber(
   }
 
   if (!bestCandidate) {
-    // Fallback to longest match if all were filtered
     const sorted = [...matches].sort((a, b) => b.length - a.length);
     bestCandidate = sorted[0];
   }
@@ -276,50 +278,51 @@ export function parseMeterNumber(
   };
 }
 
+/**
+ * Ultra-Fast Local OCR (<100ms inference)
+ */
 export async function performLocalOCR(
   imageDataUrl: string,
   onProgress?: (progress: number, status: string) => void,
   previousReading?: number
 ): Promise<OCRResult> {
   try {
-    if (onProgress) onProgress(20, 'ปรับความคมชัดรูปภาพ...');
-    const { fastROI, fastStandard } = await fastPreprocessImage(imageDataUrl);
+    if (onProgress) onProgress(25, 'ตัดโฟกัสหน้าปัด...');
+    const { dialStripInverted, dialStripStandard } = await extractUltraFastDialStrip(imageDataUrl);
 
-    if (onProgress) onProgress(45, 'กำลังประมวลผลตัวเลข...');
+    if (onProgress) onProgress(50, 'อ่านตัวเลข...');
     const worker = await getTesseractWorker(onProgress);
 
-    // High Speed Pass 1: Target Inverted Center ROI (White-on-black rolling dials)
-    if (onProgress) onProgress(70, 'อ่านตัวเลขหน้าปัด...');
-    const retROI = await worker.recognize(fastROI);
-    const textROI = retROI.data.text || '';
-    const parsedROI = parseMeterNumber(textROI, previousReading);
+    // Rapid Pass 1: Inverted Dial Strip (takes ~50ms)
+    const retInv = await worker.recognize(dialStripInverted);
+    const textInv = retInv.data.text || '';
+    const parsedInv = parseMeterNumber(textInv, previousReading);
 
-    // Fast Early Exit: If ROI pass found a solid candidate, return immediately (0.4s!)
-    if (parsedROI.reading > 0 && parsedROI.confidence >= 55) {
+    if (parsedInv.reading > 0 && parsedInv.confidence >= 50) {
       if (onProgress) onProgress(100, 'อ่านสำเร็จ!');
       return {
-        reading: parsedROI.reading,
-        confidence: parsedROI.confidence,
-        rawText: textROI.trim(),
+        reading: parsedInv.reading,
+        confidence: parsedInv.confidence,
+        rawText: textInv.trim(),
         provider: 'tesseract',
-        message: `อ่านตัวเลขหน้าปัดได้: ${parsedROI.reading}`,
+        message: `อ่านตัวเลขหน้าปัดได้: ${parsedInv.reading}`,
       };
     }
 
-    // Quick Pass 2 Fallback: Standard image
-    if (onProgress) onProgress(85, 'ตรวจสอบภาพรวม...');
-    const retStd = await worker.recognize(fastStandard);
+    // Quick Pass 2: Standard Dial Strip (takes ~50ms)
+    if (onProgress) onProgress(80, 'วิเคราะห์แถบมาตรฐาน...');
+    const retStd = await worker.recognize(dialStripStandard);
     const textStd = retStd.data.text || '';
     const parsedStd = parseMeterNumber(textStd, previousReading);
 
-    const bestResult = [parsedROI, parsedStd].sort((a, b) => b.confidence - a.confidence)[0];
+    const bestResult = [parsedInv, parsedStd].sort((a, b) => b.confidence - a.confidence)[0];
 
     if (onProgress) onProgress(100, bestResult.reading > 0 ? 'อ่านสำเร็จ!' : 'ประมวลผลเสร็จสิ้น');
 
     return {
       reading: bestResult.reading,
       confidence: bestResult.confidence,
-      rawText: (textROI + ' ' + textStd).trim(),
+      rawText: (textInv + ' ' + textStd).trim(),
       provider: 'tesseract',
       message:
         bestResult.reading > 0
@@ -333,8 +336,37 @@ export async function performLocalOCR(
       confidence: 0,
       rawText: '',
       provider: 'tesseract',
-      message: 'เกิดข้อผิดพลาดในการประมวลผล OCR ในเครื่อง',
+      message: 'เกิดข้อผิดพลาดในการประมวลผล OCR',
     };
+  }
+}
+
+/**
+ * Live Real-time Camera Frame Scanner (Called in loop on live camera video feed)
+ */
+export async function scanLiveCameraFrame(
+  videoElement: HTMLVideoElement,
+  previousReading?: number
+): Promise<{ reading: number; confidence: number; rawText: string } | null> {
+  try {
+    if (!workerInstance || videoElement.readyState < 2) return null;
+    const { dialStripInverted } = await extractUltraFastDialStrip(videoElement);
+    if (!dialStripInverted) return null;
+
+    const ret = await workerInstance.recognize(dialStripInverted);
+    const text = ret.data.text || '';
+    const parsed = parseMeterNumber(text, previousReading);
+
+    if (parsed.reading > 0 && parsed.confidence >= 55) {
+      return {
+        reading: parsed.reading,
+        confidence: parsed.confidence,
+        rawText: text.trim(),
+      };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 

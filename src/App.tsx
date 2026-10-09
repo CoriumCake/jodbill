@@ -28,6 +28,7 @@ import {
 import { calculateCycleSummary } from './utils/projection';
 import { startProductTour } from './utils/tour';
 import { checkUrlForShare, clearShareUrlParams } from './utils/shareService';
+import { preloadOCRWorker } from './utils/ocrService';
 import { Header } from './components/Header';
 import { HeroRealtimeCards } from './components/HeroRealtimeCards';
 import { ChartsSection } from './components/ChartsSection';
@@ -82,6 +83,11 @@ export function App() {
         setSettings((prev) => ({ ...prev, ...idbSettings }));
       }
     });
+
+    // Warm up OCR engine in background
+    setTimeout(() => {
+      preloadOCRWorker();
+    }, 800);
   }, []);
 
   // Check if opened via room share link
