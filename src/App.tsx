@@ -15,8 +15,10 @@ import {
 import type { MeterReading, UserSettings, MeterType, UserRole } from './types';
 import { 
   loadReadings, 
+  loadReadingsAsync,
   saveReadings, 
   loadSettings, 
+  loadSettingsAsync,
   saveSettings, 
   exportToCSV, 
   generateSampleData,
@@ -52,7 +54,7 @@ export function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync state to LocalStorage
+  // Sync state to LocalStorage & IndexedDB on changes
   useEffect(() => {
     saveReadings(readings);
   }, [readings]);
@@ -61,19 +63,43 @@ export function App() {
     saveSettings(settings);
   }, [settings]);
 
+  // Async IndexedDB hydration (guarantees no data loss even after heavy sessions)
+  useEffect(() => {
+    loadReadingsAsync().then((idbReadings) => {
+      if (idbReadings && idbReadings.length > 0) {
+        setReadings((prev) => {
+          if (prev.length === 0) return idbReadings;
+          // Merge unique readings by ID
+          const existingIds = new Set(prev.map((r) => r.id));
+          const missing = idbReadings.filter((r) => !existingIds.has(r.id));
+          return missing.length > 0 ? [...prev, ...missing] : prev;
+        });
+      }
+    });
+
+    loadSettingsAsync().then((idbSettings) => {
+      if (idbSettings) {
+        setSettings((prev) => ({ ...prev, ...idbSettings }));
+      }
+    });
+  }, []);
+
   // Check if opened via room share link
   useEffect(() => {
     const shared = checkUrlForShare();
     if (shared) {
       if (shared.readings && shared.readings.length > 0) {
         setReadings(shared.readings);
+        saveReadings(shared.readings);
       }
       if (shared.settings) {
-        setSettings((prev) => ({
-          ...prev,
+        const nextSettings = {
+          ...settings,
           ...shared.settings,
           currentRole: shared.role,
-        }));
+        };
+        setSettings(nextSettings);
+        saveSettings(nextSettings);
       }
       clearShareUrlParams();
       showToast(
@@ -116,7 +142,9 @@ export function App() {
       id: `reading-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     };
 
-    setReadings((prev) => [newReading, ...prev]);
+    const nextReadings = [newReading, ...readings];
+    setReadings(nextReadings);
+    saveReadings(nextReadings);
     showToast(`บันทึกมิเตอร์${newReading.meterType === 'electricity' ? 'ไฟฟ้า' : 'น้ำประปา'}แล้ว`);
   };
 
@@ -125,7 +153,9 @@ export function App() {
       showToast('⚠️ ไม่อนุญาตให้ลบข้อมูลในโหมดดูอย่างเดียว');
       return;
     }
-    setReadings((prev) => prev.filter((r) => r.id !== id));
+    const nextReadings = readings.filter((r) => r.id !== id);
+    setReadings(nextReadings);
+    saveReadings(nextReadings);
     showToast('ลบรายการบันทึกแล้ว');
   };
 

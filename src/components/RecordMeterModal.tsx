@@ -19,6 +19,7 @@ import {
   extractPhotoDate, 
   preloadOCRWorker 
 } from '../utils/ocrService';
+import { createThumbnail } from '../utils/storage';
 import { calculateElectricityCost, calculateWaterCost } from '../utils/rateCalculator';
 
 interface RecordMeterModalProps {
@@ -230,11 +231,20 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
     setReadingInput(nextVal.toString());
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const num = parseFloat(readingInput);
     if (isNaN(num) || num < 0) {
       alert('กรุณาระบุเลขมิเตอร์ให้ถูกต้อง');
       return;
+    }
+
+    let finalPhotoUrl = photoDataUrl || undefined;
+    if (photoDataUrl && photoDataUrl.length > 50000) {
+      try {
+        finalPhotoUrl = await createThumbnail(photoDataUrl, 360);
+      } catch {
+        finalPhotoUrl = photoDataUrl;
+      }
     }
 
     onSaveReading({
@@ -244,7 +254,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       unitsUsed: unitsDiff > 0 ? unitsDiff : undefined,
       calculatedCost: costDiff > 0 ? costDiff : undefined,
       timestamp: new Date(timestamp).toISOString(),
-      photoUrl: photoDataUrl || undefined,
+      photoUrl: finalPhotoUrl,
       notes: notes.trim() || undefined,
       detectedBy: detectedProvider,
       ocrConfidence: ocrConfidence,
