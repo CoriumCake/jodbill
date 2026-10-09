@@ -49,6 +49,7 @@ export type RateConfig = DormFlatRateConfig | GovernmentRateConfig;
 export interface UserSettings {
   dormName: string;
   roomNumber: string;
+  monthlyRent: number;              // Monthly room rent fee e.g. 4500 THB (0 if not applicable)
   billingCutoffDay: number;         // 1 - 31 (e.g., 25th of month)
   budgetElectricity: number;        // e.g., 1800 THB
   budgetWater: number;              // e.g., 250 THB
@@ -66,6 +67,7 @@ export interface CycleSummary {
   daysTotal: number;
   daysPassed: number;
   daysRemaining: number;
+  monthlyRent: number;
   electricity: {
     startReading: number;
     currentReading: number;
@@ -98,6 +100,8 @@ export interface CycleSummary {
   };
   totalCurrentCost: number;
   totalProjectedCost: number;
+  totalProjectedWithRent: number;
+  totalCurrentWithRent: number;
   totalBudget: number;
   totalBudgetPercent: number;
 }

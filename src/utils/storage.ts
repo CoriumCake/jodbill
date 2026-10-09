@@ -24,6 +24,7 @@ export const DEFAULT_RATE_CONFIG: DormFlatRateConfig = {
 export const DEFAULT_SETTINGS: UserSettings = {
   dormName: 'หอพักของฉัน',
   roomNumber: '101',
+  monthlyRent: 3500,
   billingCutoffDay: 25,
   budgetElectricity: 1500,
   budgetWater: 200,

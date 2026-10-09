@@ -10,7 +10,8 @@ import {
   Save, 
   RotateCcw, 
   Upload,
-  Users
+  Users,
+  Home
 } from 'lucide-react';
 import type { UserSettings, DormFlatRateConfig, GovernmentRateConfig, WaterBillingType } from '../types';
 
@@ -413,6 +414,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Monthly Room Rent */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Home className="w-3.5 h-3.5 text-slate-700" />
+                    ค่าเช่าห้องรายเดือน (บาท)
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">ใส่ 0 หากไม่มี</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="100"
+                    value={formData.monthlyRent ?? 0}
+                    onChange={(e) =>
+                      setFormData({ ...formData, monthlyRent: Math.max(0, parseFloat(e.target.value) || 0) })
+                    }
+                    placeholder="เช่น 3500 หรือ 4500"
+                    className="w-full bg-white text-sm font-bold font-mono text-slate-900 px-3 py-2 rounded-lg border border-slate-300 focus:border-slate-800 focus:outline-none"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">บาท/เดือน</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="text-[10px] text-slate-400">เลือกเร็ว:</span>
+                  {[0, 3000, 3500, 4000, 4500, 5500, 7000].map((rent) => (
+                    <button
+                      key={rent}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, monthlyRent: rent })}
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono transition-all cursor-pointer ${
+                        formData.monthlyRent === rent
+                          ? 'bg-slate-800 text-white font-bold'
+                          : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {rent === 0 ? 'ไม่มีค่าห้อง' : `฿${rent.toLocaleString()}`}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

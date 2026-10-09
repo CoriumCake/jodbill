@@ -4,7 +4,8 @@ import {
   Printer, 
   Zap, 
   Droplets, 
-  FileText
+  FileText,
+  Home
 } from 'lucide-react';
 import type { CycleSummary, UserSettings } from '../types';
 
@@ -27,7 +28,7 @@ export const BillSlipModal: React.FC<BillSlipModalProps> = ({
     window.print();
   };
 
-  const { electricity, water, cycleName } = summary;
+  const { electricity, water, cycleName, monthlyRent } = summary;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
@@ -70,12 +71,25 @@ export const BillSlipModal: React.FC<BillSlipModalProps> = ({
           </div>
 
           <div className="space-y-2.5 text-xs">
+            {/* Room Rent if applicable */}
+            {monthlyRent > 0 && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between font-bold text-slate-900">
+                <span className="flex items-center gap-1.5">
+                  <Home className="w-3.5 h-3.5 text-slate-700" />
+                  ค่าเช่าห้องรายเดือน
+                </span>
+                <span className="font-mono text-sm">
+                  ฿{monthlyRent.toFixed(2)}
+                </span>
+              </div>
+            )}
+
             {/* Electricity */}
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
               <div className="flex items-center justify-between font-bold text-slate-900">
                 <span className="flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                  ค่าไฟฟ้า
+                  ค่าไฟฟ้า (ประมาณการ)
                 </span>
                 <span className="font-mono text-sm">
                   ฿{electricity.projectedCost.toFixed(2)}
@@ -130,14 +144,14 @@ export const BillSlipModal: React.FC<BillSlipModalProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-slate-700 block">
-                  ยอดรวมประมาณการ
+                  {monthlyRent > 0 ? 'ยอดรวมบิลห้องพักทั้งสิ้น' : 'ยอดรวมประมาณการ'}
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  (คำนวณตามอัตราใช้จริง)
+                  {monthlyRent > 0 ? '(ค่าห้อง + ค่าน้ำ + ค่าไฟ)' : '(คำนวณตามอัตราใช้จริง)'}
                 </span>
               </div>
               <span className="text-xl font-black text-slate-900 font-mono">
-                ฿{summary.totalProjectedCost.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ฿{(monthlyRent > 0 ? summary.totalProjectedWithRent : summary.totalProjectedCost).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>

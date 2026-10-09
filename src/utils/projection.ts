@@ -157,8 +157,11 @@ export function calculateCycleSummary(
     flatFeeDetail: isWaterFlatFee ? calculateWaterCost(0, settings.rateConfig).detail : undefined,
   };
 
+  const monthlyRent = typeof settings.monthlyRent === 'number' ? settings.monthlyRent : 0;
   const totalCurrentCost = Math.round((electricity.currentCost + water.currentCost) * 100) / 100;
   const totalProjectedCost = Math.round((electricity.projectedCost + water.projectedCost) * 100) / 100;
+  const totalProjectedWithRent = Math.round((totalProjectedCost + monthlyRent) * 100) / 100;
+  const totalCurrentWithRent = Math.round((totalCurrentCost + monthlyRent) * 100) / 100;
   const totalBudget = settings.budgetElectricity + settings.budgetWater;
   const totalBudgetPercent = totalBudget > 0 ? Math.round((totalProjectedCost / totalBudget) * 100) : 0;
 
@@ -171,8 +174,11 @@ export function calculateCycleSummary(
     daysRemaining: Math.round(daysRemaining),
     electricity,
     water,
+    monthlyRent,
     totalCurrentCost,
     totalProjectedCost,
+    totalProjectedWithRent,
+    totalCurrentWithRent,
     totalBudget,
     totalBudgetPercent,
   };

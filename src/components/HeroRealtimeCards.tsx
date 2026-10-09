@@ -6,7 +6,8 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Flame, 
-  Plus
+  Plus,
+  Home
 } from 'lucide-react';
 import type { CycleSummary, UserSettings } from '../types';
 
@@ -22,7 +23,7 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
   settings,
   onOpenRecord,
 }) => {
-  const { electricity, water, daysRemaining, daysPassed, cycleName } = summary;
+  const { electricity, water, daysRemaining, daysPassed, cycleName, monthlyRent } = summary;
 
   const formatOdometer = (val: number) => {
     const parts = val.toFixed(1).split('.');
@@ -38,8 +39,8 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
     <div id="tour-hero-cards" className="space-y-4">
       {/* Top Banner: Cycle Summary & Total Projection */}
       <div className="clean-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
               สถานะรอบบิล
@@ -48,6 +49,12 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
             <span className="text-xs font-medium text-slate-700">
               {cycleName}
             </span>
+            {monthlyRent > 0 && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-mono">
+                <Home className="w-3 h-3 text-slate-500" />
+                ค่าห้อง ฿{monthlyRent.toLocaleString()}/ด.
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500">
             ผ่านไปแล้ว <span className="font-semibold text-slate-800">{daysPassed} วัน</span> / เหลืออีก{' '}
@@ -56,16 +63,27 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
         </div>
 
         {/* Total Cost Badges */}
-        <div className="flex items-center gap-4 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/80 self-start sm:self-auto">
+        <div className="flex items-center gap-3 sm:gap-4 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200/80 self-start sm:self-auto flex-wrap">
           <div>
-            <span className="text-[11px] font-medium text-slate-500 block">ประมาณการบิลสิ้นเดือน</span>
-            <span className="text-lg font-bold text-slate-900 font-mono">
-              ฿{summary.totalProjectedCost.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            <span className="text-[11px] font-medium text-slate-500 block">
+              {monthlyRent > 0 ? 'รวมบิลสิ้นเดือน (ห้อง+น้ำ+ไฟ)' : 'ประมาณการบิลสิ้นเดือน'}
             </span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-bold text-slate-900 font-mono">
+                ฿{(monthlyRent > 0 ? summary.totalProjectedWithRent : summary.totalProjectedCost).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </span>
+              {monthlyRent > 0 && (
+                <span className="text-[10px] text-slate-400 font-mono">
+                  (น้ำไฟ ~฿{summary.totalProjectedCost.toLocaleString()})
+                </span>
+              )}
+            </div>
           </div>
           <div className="h-8 w-px bg-slate-200" />
           <div>
-            <span className="text-[11px] font-medium text-slate-500 block">ใช้ไปแล้วตอนนี้</span>
+            <span className="text-[11px] font-medium text-slate-500 block">
+              {monthlyRent > 0 ? 'ค่าน้ำค่าไฟสะสม' : 'ใช้ไปแล้วตอนนี้'}
+            </span>
             <span className="text-sm font-semibold text-slate-700 font-mono">
               ฿{summary.totalCurrentCost.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </span>
