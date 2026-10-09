@@ -126,13 +126,14 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
 
   const snapPhoto = () => {
     if (!videoRef.current) return;
+    const video = videoRef.current;
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth || 1280;
-    canvas.height = videoRef.current.videoHeight || 720;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
       setPhotoDataUrl(dataUrl);
       stopCamera();
       triggerOCR(dataUrl);
@@ -161,15 +162,24 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
     try {
       let result;
       if (settings.geminiApiKey && settings.geminiApiKey.trim().length > 10) {
-        result = await performGeminiVisionOCR(dataUrl, settings.geminiApiKey, (p, s) => {
-          setOcrProgress(p);
-          setOcrStatusText(s);
-        });
+        result = await performGeminiVisionOCR(
+          dataUrl,
+          settings.geminiApiKey,
+          (p, s) => {
+            setOcrProgress(p);
+            setOcrStatusText(s);
+          },
+          previousValue
+        );
       } else {
-        result = await performLocalOCR(dataUrl, (p, s) => {
-          setOcrProgress(p);
-          setOcrStatusText(s);
-        });
+        result = await performLocalOCR(
+          dataUrl,
+          (p, s) => {
+            setOcrProgress(p);
+            setOcrStatusText(s);
+          },
+          previousValue
+        );
       }
 
       if (result.reading > 0) {
@@ -181,7 +191,9 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
           setMeterType(result.meterTypeHint);
         }
       } else {
-        setOcrResultMessage('ไม่พบตัวเลขชัดเจน กรุณากรอกเลขด้วยตนเอง');
+        setOcrResultMessage(
+          result.message || 'ไม่พบตัวเลขชัดเจน แนะนำถ่ายซูมเฉพาะช่องตัวเลขหมุน หรือกรอกเลขเอง'
+        );
       }
     } catch {
       setOcrResultMessage('เกิดข้อผิดพลาดในการอ่านภาพ กรุณากรอกตัวเลขเอง');
@@ -413,9 +425,17 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
             )}
 
             {ocrResultMessage && !isProcessingOCR && (
-              <div className="p-2 bg-white rounded-lg border border-slate-200 text-xs text-slate-700 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>{ocrResultMessage}</span>
+              <div className="p-2.5 bg-white rounded-lg border border-slate-200 text-xs text-slate-700 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium">{ocrResultMessage}</p>
+                </div>
+              </div>
+            )}
+
+            {!settings.geminiApiKey && (
+              <div className="text-[11px] text-slate-500 bg-white/70 p-2 rounded-lg border border-slate-200/70 flex items-center justify-between">
+                <span>💡 <strong>คำแนะนำ:</strong> ถ่ายมุมตรงระยะใกล้ช่องตัวเลขเพื่อความแม่นยำ</span>
               </div>
             )}
           </div>
