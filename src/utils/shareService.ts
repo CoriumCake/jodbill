@@ -1,8 +1,10 @@
 import LZString from 'lz-string';
 import type { UserRole, UserSettings, MeterReading, SharePayload, RoomShareConfig } from '../types';
 
+const PERSISTENT_ROOM_SHARE_KEY = 'jodbill_persistent_room_share';
+
 export function generateRoomConfig(dormName: string, roomNumber: string): RoomShareConfig {
-  const cleanRoom = roomNumber.replace(/[^a-zA-Z0-9]/g, '') || 'ROOM';
+  const cleanRoom = roomNumber.replace(/[^a-zA-Z0-9]/g, '') || '101';
   const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
   const roomId = `JOD-${cleanRoom}-${randSuffix}`;
 
@@ -13,17 +15,48 @@ export function generateRoomConfig(dormName: string, roomNumber: string): RoomSh
     roomId,
     editorPin,
     viewerPin,
-    roomName: `${dormName || 'หอพัก'} ห้อง ${roomNumber || ''}`.trim(),
+    roomName: `${dormName || 'หอพัก'} ห้อง ${roomNumber || '101'}`.trim(),
     createdAt: new Date().toISOString(),
   };
+}
+
+// Guarantees room code is STABLE and NEVER re-generates randomly on re-renders
+export function getOrInitRoomConfig(settings: UserSettings): RoomShareConfig {
+  if (settings.roomShare?.roomId) {
+    return settings.roomShare;
+  }
+
+  try {
+    const cached = localStorage.getItem(PERSISTENT_ROOM_SHARE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached) as RoomShareConfig;
+      if (parsed?.roomId) {
+        settings.roomShare = parsed;
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore json error
+  }
+
+  // Generate once and persist forever in localStorage
+  const newConfig = generateRoomConfig(settings.dormName, settings.roomNumber);
+  try {
+    localStorage.setItem(PERSISTENT_ROOM_SHARE_KEY, JSON.stringify(newConfig));
+  } catch {
+    // ignore quota error
+  }
+  settings.roomShare = newConfig;
+  return newConfig;
 }
 
 export function createSharePayload(
   settings: UserSettings,
   readings: MeterReading[],
-  role: UserRole
+  role: UserRole,
+  forcedRoomConfig?: RoomShareConfig
 ): string {
-  const roomConfig = settings.roomShare || generateRoomConfig(settings.dormName, settings.roomNumber);
+  const roomConfig = forcedRoomConfig || getOrInitRoomConfig(settings);
 
   // Strip sensitive local API keys when sharing with viewers or co-tenants
   const cleanSettings: Partial<UserSettings> = {
@@ -78,10 +111,10 @@ export function generateShareLinks(
   readings: MeterReading[]
 ): { viewerUrl: string; editorUrl: string; roomId: string; editorPin: string } {
   const baseUrl = window.location.origin + window.location.pathname;
-  const roomConfig = settings.roomShare || generateRoomConfig(settings.dormName, settings.roomNumber);
+  const roomConfig = getOrInitRoomConfig(settings);
 
-  const viewerPayload = createSharePayload(settings, readings, 'viewer');
-  const editorPayload = createSharePayload(settings, readings, 'editor');
+  const viewerPayload = createSharePayload(settings, readings, 'viewer', roomConfig);
+  const editorPayload = createSharePayload(settings, readings, 'editor', roomConfig);
 
   const viewerUrl = `${baseUrl}?share=${viewerPayload}&role=viewer`;
   const editorUrl = `${baseUrl}?share=${editorPayload}&role=editor`;

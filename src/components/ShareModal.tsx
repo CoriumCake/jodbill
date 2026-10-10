@@ -35,9 +35,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [enteredPin, setEnteredPin] = useState<string>('');
   const [pinError, setPinError] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  const { viewerUrl, editorUrl, roomId, editorPin } = React.useMemo(() => {
+    return generateShareLinks(settings, readings);
+  }, [settings, readings]);
 
-  const { viewerUrl, editorUrl, roomId, editorPin } = generateShareLinks(settings, readings);
+  if (!isOpen) return null;
 
   const handleCopy = (url: string, type: 'viewer' | 'editor') => {
     navigator.clipboard.writeText(url);

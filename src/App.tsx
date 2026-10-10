@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Eye, Sparkles } from 'lucide-react';
 import type { MeterReading, UserSettings, MeterType, UserRole, AuthUser, SyncStatus } from './types';
 import { 
@@ -60,30 +60,52 @@ export function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Safety refs to break Realtime feedback loop
+  const isRemoteSyncingRef = useRef(false);
+  const lastPushedHashRef = useRef('');
+  const readingsRef = useRef(readings);
+  readingsRef.current = readings;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
-  // Sync state to LocalStorage & IndexedDB on changes + Cloud Firestore
+  // Sync state to LocalStorage & IndexedDB on changes + Cloud Database (Debounced & Loop-Protected)
   useEffect(() => {
     saveReadings(readings);
-    if (user) {
+    saveSettings(settings);
+
+    if (!user) return;
+
+    // If this update was triggered by remote sync, do NOT push it back to the cloud
+    if (isRemoteSyncingRef.current) {
+      isRemoteSyncingRef.current = false;
+      return;
+    }
+
+    const currentHash = JSON.stringify({ readings, settings });
+    if (currentHash === lastPushedHashRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
       setSyncStatus('syncing');
       pushUserDataToCloud(user.uid, { readings, settings })
         .then((ok) => {
           if (ok) {
+            lastPushedHashRef.current = currentHash;
             setSyncStatus('synced');
             setLastSyncedAt(new Date());
           }
         })
         .catch(() => setSyncStatus('error'));
-    }
-  }, [readings, user, settings]);
+    }, 1000);
 
-  useEffect(() => {
-    saveSettings(settings);
-  }, [settings]);
+    return () => clearTimeout(timer);
+  }, [readings, user, settings]);
 
   // Handle Cloud Sync on User Authentication Change
   useEffect(() => {
@@ -128,18 +150,37 @@ export function App() {
     if (!user) return;
     const unsubRealtime = subscribeToRoomRealtime('default-room', () => {
       fetchUserDataFromCloud(user.uid).then((cloudData) => {
-        if (cloudData) {
-          if (cloudData.readings && cloudData.readings.length > 0) {
+        if (!cloudData) return;
+
+        let hasNewData = false;
+
+        // Check if incoming readings are actually different
+        if (cloudData.readings && cloudData.readings.length > 0) {
+          const currentReadingsJson = JSON.stringify(readingsRef.current);
+          const incomingReadingsJson = JSON.stringify(cloudData.readings);
+          if (currentReadingsJson !== incomingReadingsJson) {
+            isRemoteSyncingRef.current = true;
             setReadings(cloudData.readings);
             saveReadings(cloudData.readings);
+            hasNewData = true;
           }
-          if (cloudData.settings) {
-            setSettings((prev) => {
-              const merged = { ...prev, ...cloudData.settings };
-              saveSettings(merged);
-              return merged;
-            });
+        }
+
+        // Check if incoming settings are actually different
+        if (cloudData.settings) {
+          const currentSettingsJson = JSON.stringify(settingsRef.current);
+          const merged = { ...settingsRef.current, ...cloudData.settings };
+          const mergedJson = JSON.stringify(merged);
+          if (currentSettingsJson !== mergedJson) {
+            isRemoteSyncingRef.current = true;
+            setSettings(merged);
+            saveSettings(merged);
+            hasNewData = true;
           }
+        }
+
+        // Only show toast if real new data arrived from outside
+        if (hasNewData) {
           showToast('⚡ ได้รับข้อมูลมิเตอร์อัปเดตแบบ Real-time');
         }
       });
