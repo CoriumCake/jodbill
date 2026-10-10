@@ -1,187 +1,21 @@
-import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut, 
-  onAuthStateChanged,
-  type Auth,
-  type User
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  type Firestore 
-} from 'firebase/firestore';
 import type { AuthUser, MeterReading, UserSettings } from '../types';
+import { 
+  supabase, 
+  isSupabaseConfigured, 
+  signInWithGoogleSupabase, 
+  signOutSupabase, 
+  subscribeToSupabaseAuth,
+  syncReadingsToSupabase,
+  syncSettingsToSupabase,
+  fetchReadingsFromSupabase,
+  fetchSettingsFromSupabase
+} from './supabase';
 
-export interface FirebaseConfig {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  appId: string;
-}
-
-const FIREBASE_CONFIG_STORAGE_KEY = 'jodbill_custom_firebase_config';
-const GOOGLE_CLIENT_ID_STORAGE_KEY = 'jodbill_google_client_id';
 const CURRENT_USER_STORAGE_KEY = 'jodbill_active_auth_user';
-const SAVED_ACCOUNTS_STORAGE_KEY = 'jodbill_saved_accounts';
 
-// Google Client ID
+// Get Google Client ID from environment variables (.env)
 export function getGoogleClientId(): string | null {
-  const custom = localStorage.getItem(GOOGLE_CLIENT_ID_STORAGE_KEY);
-  if (custom && custom.trim()) return custom.trim();
-  return import.meta.env.VITE_GOOGLE_CLIENT_ID || null;
-}
-
-export function saveGoogleClientId(clientId: string | null): void {
-  if (!clientId || !clientId.trim()) {
-    localStorage.removeItem(GOOGLE_CLIENT_ID_STORAGE_KEY);
-  } else {
-    localStorage.setItem(GOOGLE_CLIENT_ID_STORAGE_KEY, clientId.trim());
-  }
-}
-
-// Read Firebase config from env or localStorage
-export function getFirebaseConfig(): FirebaseConfig | null {
-  const customStr = localStorage.getItem(FIREBASE_CONFIG_STORAGE_KEY);
-  if (customStr) {
-    try {
-      const parsed = JSON.parse(customStr);
-      if (parsed.apiKey && parsed.projectId) {
-        return parsed as FirebaseConfig;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // Fallback to Vite env variables
-  const envApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-  const envProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-
-  if (envApiKey && envProjectId) {
-    return {
-      apiKey: envApiKey,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${envProjectId}.firebaseapp.com`,
-      projectId: envProjectId,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || `${envProjectId}.appspot.com`,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-      appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-    };
-  }
-
-  return null;
-}
-
-export function saveFirebaseConfig(config: FirebaseConfig | null): void {
-  if (!config) {
-    localStorage.removeItem(FIREBASE_CONFIG_STORAGE_KEY);
-  } else {
-    localStorage.setItem(FIREBASE_CONFIG_STORAGE_KEY, JSON.stringify(config));
-  }
-}
-
-// Saved Accounts List
-export function getSavedAccounts(): AuthUser[] {
-  try {
-    const raw = localStorage.getItem(SAVED_ACCOUNTS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-export function addSavedAccount(account: AuthUser): void {
-  const accounts = getSavedAccounts().filter((a) => a.uid !== account.uid && a.email !== account.email);
-  const updated = [account, ...accounts];
-  localStorage.setItem(SAVED_ACCOUNTS_STORAGE_KEY, JSON.stringify(updated.slice(0, 5)));
-}
-
-export function removeSavedAccount(uid: string): void {
-  const accounts = getSavedAccounts().filter((a) => a.uid !== uid);
-  localStorage.setItem(SAVED_ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
-}
-
-// Lazy Firebase initialization
-let appInstance: FirebaseApp | null = null;
-let authInstance: Auth | null = null;
-let dbInstance: Firestore | null = null;
-
-function initFirebase() {
-  const config = getFirebaseConfig();
-  if (!config) return null;
-
-  try {
-    if (!getApps().length) {
-      appInstance = initializeApp(config);
-    } else {
-      appInstance = getApps()[0];
-    }
-    authInstance = getAuth(appInstance);
-    dbInstance = getFirestore(appInstance);
-    return { app: appInstance, auth: authInstance, db: dbInstance };
-  } catch (err) {
-    console.warn('Failed to initialize Firebase:', err);
-    return null;
-  }
-}
-
-// Convert Firebase User to AuthUser
-function formatFirebaseUser(user: User): AuthUser {
-  return {
-    uid: user.uid,
-    displayName: user.displayName,
-    email: user.email,
-    photoURL: user.photoURL,
-    provider: 'google',
-  };
-}
-
-// Auth State Subscriber
-export function subscribeToAuth(callback: (user: AuthUser | null) => void): () => void {
-  const fb = initFirebase();
-
-  // If real Firebase is available
-  if (fb && fb.auth) {
-    return onAuthStateChanged(fb.auth, (user) => {
-      if (user) {
-        const formatted = formatFirebaseUser(user);
-        addSavedAccount(formatted);
-        callback(formatted);
-      } else {
-        const localUserStr = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-        if (localUserStr) {
-          try {
-            callback(JSON.parse(localUserStr));
-            return;
-          } catch {
-            // ignore
-          }
-        }
-        callback(null);
-      }
-    });
-  }
-
-  // Fallback to active local stored session
-  const localUserStr = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
-  if (localUserStr) {
-    try {
-      callback(JSON.parse(localUserStr));
-    } catch {
-      callback(null);
-    }
-  } else {
-    callback(null);
-  }
-
-  return () => {};
+  return import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() || null;
 }
 
 // Global window declaration for Google Identity Services (GIS)
@@ -204,8 +38,35 @@ declare global {
   }
 }
 
-// Real Google GIS OAuth2 Login
-export async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
+// Auth State Subscriber (Listens to Supabase or local storage)
+export function subscribeToAuth(callback: (user: AuthUser | null) => void): () => void {
+  // 1. If Supabase is configured, use official Supabase Auth Listener
+  if (isSupabaseConfigured && supabase) {
+    return subscribeToSupabaseAuth((user) => {
+      if (user) {
+        localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
+      }
+      callback(user);
+    });
+  }
+
+  // 2. Fallback to active local stored session
+  const localUserStr = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+  if (localUserStr) {
+    try {
+      callback(JSON.parse(localUserStr));
+    } catch {
+      callback(null);
+    }
+  } else {
+    callback(null);
+  }
+
+  return () => {};
+}
+
+// Google GIS OAuth2 Login Fallback
+async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
   return new Promise((resolve, reject) => {
     if (!window.google?.accounts?.oauth2) {
       reject(new Error('Google Identity Services script not loaded.'));
@@ -223,7 +84,6 @@ export async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
           }
           if (response.access_token) {
             try {
-              // Fetch user info from Google's UserInfo API
               const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                 headers: { Authorization: `Bearer ${response.access_token}` },
               });
@@ -236,7 +96,6 @@ export async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
                 provider: 'google',
               };
               localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(authUser));
-              addSavedAccount(authUser);
               resolve(authUser);
             } catch (err) {
               reject(err);
@@ -255,74 +114,58 @@ export async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
   });
 }
 
-// Firebase Google Sign-In
-export async function loginWithFirebaseGoogle(): Promise<AuthUser> {
-  const fb = initFirebase();
-  if (!fb || !fb.auth) {
-    throw new Error('Firebase is not configured');
+// Unified Google Login
+export async function loginWithGoogle(): Promise<AuthUser | void> {
+  // 1. Supabase Auth (Primary)
+  if (isSupabaseConfigured && supabase) {
+    await signInWithGoogleSupabase();
+    return;
   }
 
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-  const result = await signInWithPopup(fb.auth, provider);
-  const user = formatFirebaseUser(result.user);
-  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
-  addSavedAccount(user);
-  return user;
-}
+  // 2. Google GIS Fallback
+  const googleClientId = getGoogleClientId();
+  if (googleClientId) {
+    return loginWithGoogleGIS(googleClientId);
+  }
 
-// Custom / Manual Account Login (e.g. Choose Gmail address)
-export function loginWithCustomAccount(email: string, displayName?: string, photoURL?: string): AuthUser {
-  const cleanEmail = email.trim().toLowerCase();
-  const name = displayName?.trim() || cleanEmail.split('@')[0];
-  const user: AuthUser = {
-    uid: `acc-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
-    displayName: name,
-    email: cleanEmail,
-    photoURL: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
+  // 3. Dev Mode Notice when credentials are not yet placed in .env
+  console.warn(
+    '⚠️ [jodbill Developer Notice]: Neither VITE_SUPABASE_URL nor VITE_GOOGLE_CLIENT_ID are set in .env. Running demo session.'
+  );
+
+  const demoUser: AuthUser = {
+    uid: `demo-user-${Date.now()}`,
+    displayName: 'Google User (Dev Mode)',
+    email: 'user.jodbill@gmail.com',
+    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=128&h=128&fit=crop&crop=face',
     provider: 'demo',
   };
-
-  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
-  addSavedAccount(user);
-  return user;
+  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(demoUser));
+  return demoUser;
 }
 
 // Sign Out
 export async function logoutUser(): Promise<void> {
-  const fb = initFirebase();
-  if (fb && fb.auth) {
-    try {
-      await signOut(fb.auth);
-    } catch (err) {
-      console.warn('Signout error:', err);
-    }
+  if (isSupabaseConfigured && supabase) {
+    await signOutSupabase();
   }
   localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
 }
 
-// Cloud Sync: Push state to Cloud
+// Cloud Sync: Push state to Supabase Cloud
 export async function pushUserDataToCloud(
   uid: string,
   data: { readings: MeterReading[]; settings: UserSettings }
 ): Promise<boolean> {
-  const fb = initFirebase();
-  if (fb && fb.db) {
-    try {
-      const userDoc = doc(fb.db, 'users', uid);
-      await setDoc(userDoc, {
-        settings: data.settings,
-        readings: data.readings,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
-      return true;
-    } catch (err) {
-      console.error('Push to Firestore failed:', err);
-      return false;
-    }
+  // 1. Supabase Postgres Sync (Primary)
+  if (isSupabaseConfigured && supabase) {
+    const roomId = data.settings.roomShare?.roomId || 'default-room';
+    const okReadings = await syncReadingsToSupabase(uid, data.readings, roomId);
+    const okSettings = await syncSettingsToSupabase(uid, data.settings, roomId);
+    return okReadings && okSettings;
   }
 
-  // Store in cloud store simulation for this specific user
+  // 2. Fallback local cloud simulator
   const mockCloudKey = `jodbill_cloud_db_${uid}`;
   localStorage.setItem(mockCloudKey, JSON.stringify({
     settings: data.settings,
@@ -332,31 +175,27 @@ export async function pushUserDataToCloud(
   return true;
 }
 
-// Cloud Sync: Pull state from Cloud
+// Cloud Sync: Pull state from Supabase Cloud
 export async function fetchUserDataFromCloud(
   uid: string
 ): Promise<{ readings?: MeterReading[]; settings?: Partial<UserSettings>; updatedAt?: string } | null> {
-  const fb = initFirebase();
-  if (fb && fb.db) {
-    try {
-      const userDoc = doc(fb.db, 'users', uid);
-      const snapshot = await getDoc(userDoc);
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        return {
-          readings: data.readings,
-          settings: data.settings,
-          updatedAt: data.updatedAt,
-        };
-      }
-      return null;
-    } catch (err) {
-      console.error('Fetch from Firestore failed:', err);
-      return null;
-    }
+  // 1. Supabase Postgres Fetch (Primary)
+  if (isSupabaseConfigured && supabase) {
+    const roomId = 'default-room';
+    const [readings, settings] = await Promise.all([
+      fetchReadingsFromSupabase(uid, roomId),
+      fetchSettingsFromSupabase(uid, roomId),
+    ]);
+
+    if (!readings && !settings) return null;
+    return {
+      readings: readings || undefined,
+      settings: settings || undefined,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
-  // Fallback: Read from cloud store simulation
+  // 2. Fallback local cloud simulator
   const mockCloudKey = `jodbill_cloud_db_${uid}`;
   const raw = localStorage.getItem(mockCloudKey);
   if (raw) {

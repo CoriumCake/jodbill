@@ -33,6 +33,7 @@ import {
   pushUserDataToCloud, 
   fetchUserDataFromCloud 
 } from './utils/authService';
+import { subscribeToRoomRealtime } from './utils/supabase';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
@@ -126,6 +127,31 @@ export function App() {
 
     return () => unsubscribe();
   }, [showToast]);
+
+  // Real-time Supabase listener (auto syncs when roommates record a meter on their device)
+  useEffect(() => {
+    if (!user) return;
+    const unsubRealtime = subscribeToRoomRealtime('default-room', () => {
+      fetchUserDataFromCloud(user.uid).then((cloudData) => {
+        if (cloudData) {
+          if (cloudData.readings && cloudData.readings.length > 0) {
+            setReadings(cloudData.readings);
+            saveReadings(cloudData.readings);
+          }
+          if (cloudData.settings) {
+            setSettings((prev) => {
+              const merged = { ...prev, ...cloudData.settings };
+              saveSettings(merged);
+              return merged;
+            });
+          }
+          showToast('⚡ ได้รับข้อมูลมิเตอร์อัปเดตแบบ Real-time');
+        }
+      });
+    });
+
+    return () => unsubRealtime();
+  }, [user, showToast]);
 
   // Async IndexedDB hydration (guarantees no data loss even after heavy sessions)
   useEffect(() => {
