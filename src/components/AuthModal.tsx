@@ -61,7 +61,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClose();
     } catch (err: unknown) {
       console.error(err);
-      showToast('⚠️ การเข้าสู่ระบบด้วย Google ขัดข้อง หรือหน้าต่างถูกปิด');
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.toLowerCase().includes('provider') || errMsg.toLowerCase().includes('unsupported')) {
+        showToast('⚠️ กรุณาเปิดใช้งาน Google Provider ใน Supabase Dashboard ก่อนเข้าสู่ระบบ');
+      } else {
+        showToast('⚠️ การเข้าสู่ระบบด้วย Google ขัดข้อง หรือหน้าต่างถูกปิด');
+      }
     } finally {
       setIsLoggingIn(false);
     }

@@ -40,28 +40,46 @@ declare global {
 
 // Auth State Subscriber (Listens to Supabase or local storage)
 export function subscribeToAuth(callback: (user: AuthUser | null) => void): () => void {
+  // Purge any stale legacy demo user
+  try {
+    const raw = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.provider === 'demo' || parsed.displayName?.includes('Dev Mode')) {
+        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+      }
+    }
+  } catch {
+    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+  }
+
   // 1. If Supabase is configured, use official Supabase Auth Listener
   if (isSupabaseConfigured && supabase) {
     return subscribeToSupabaseAuth((user) => {
       if (user) {
         localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
       }
       callback(user);
     });
   }
 
-  // 2. Fallback to active local stored session
+  // 2. Fallback to active local stored session (only if real user)
   const localUserStr = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
   if (localUserStr) {
     try {
-      callback(JSON.parse(localUserStr));
+      const parsed = JSON.parse(localUserStr);
+      if (parsed.provider !== 'demo') {
+        callback(parsed);
+        return () => {};
+      }
     } catch {
       callback(null);
     }
-  } else {
-    callback(null);
   }
 
+  callback(null);
   return () => {};
 }
 
@@ -118,8 +136,7 @@ async function loginWithGoogleGIS(clientId: string): Promise<AuthUser> {
 export async function loginWithGoogle(): Promise<AuthUser | void> {
   // 1. Supabase Auth (Primary)
   if (isSupabaseConfigured && supabase) {
-    await signInWithGoogleSupabase();
-    return;
+    return await signInWithGoogleSupabase();
   }
 
   // 2. Google GIS Fallback
@@ -128,20 +145,7 @@ export async function loginWithGoogle(): Promise<AuthUser | void> {
     return loginWithGoogleGIS(googleClientId);
   }
 
-  // 3. Dev Mode Notice when credentials are not yet placed in .env
-  console.warn(
-    '⚠️ [jodbill Developer Notice]: Neither VITE_SUPABASE_URL nor VITE_GOOGLE_CLIENT_ID are set in .env. Running demo session.'
-  );
-
-  const demoUser: AuthUser = {
-    uid: `demo-user-${Date.now()}`,
-    displayName: 'Google User (Dev Mode)',
-    email: 'user.jodbill@gmail.com',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=128&h=128&fit=crop&crop=face',
-    provider: 'demo',
-  };
-  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(demoUser));
-  return demoUser;
+  throw new Error('ระบบ Supabase ยังไม่พร้อมใช้งาน กรุณาตรวจสอบการตั้งค่า');
 }
 
 // Sign Out

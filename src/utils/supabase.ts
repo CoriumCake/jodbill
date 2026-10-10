@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import type { AuthUser, MeterReading, UserSettings } from '../types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() || 'https://uuonhglhoagbcbmfhtsy.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1b25oZ2xob2FnYmNibWZodHN5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MTg2MzYsImV4cCI6MjEwNzE5NDYzNn0.ZQR3x4EDrcfUGpOUZREDGEZrJKGp2NMl_svlUeha15s';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -34,19 +34,23 @@ export async function signInWithGoogleSupabase(): Promise<void> {
     throw new Error('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env');
   }
 
-  const { error } = await supabase.auth.signInWithOAuth({
+  const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: window.location.origin,
       queryParams: {
         access_type: 'offline',
-        prompt: 'consent',
+        prompt: 'select_account',
       },
     },
   });
 
   if (error) {
     throw error;
+  }
+
+  if (data?.url) {
+    window.location.href = data.url;
   }
 }
 
