@@ -63,7 +63,56 @@ export async function signOutSupabase(): Promise<void> {
   }
 }
 
-// 3. Get Current User Session
+// 3. Email & Password Sign-In
+export async function signInWithEmailSupabase(email: string, password: string): Promise<AuthUser> {
+  if (!supabase) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data.user) {
+    throw new Error('ไม่พบข้อมูลผู้ใช้งาน');
+  }
+
+  return formatSupabaseUser(data.user);
+}
+
+// 4. Email & Password Sign-Up
+export async function signUpWithEmailSupabase(
+  email: string, 
+  password: string, 
+  displayName?: string
+): Promise<AuthUser | null> {
+  if (!supabase) {
+    throw new Error('Supabase is not configured.');
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: {
+      data: {
+        full_name: displayName?.trim() || email.split('@')[0],
+      },
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.user ? formatSupabaseUser(data.user) : null;
+}
+
+// 5. Get Current User Session
 export async function getCurrentSupabaseUser(): Promise<AuthUser | null> {
   if (!supabase) return null;
   const { data: { session } } = await supabase.auth.getSession();

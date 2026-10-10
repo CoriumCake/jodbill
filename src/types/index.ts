@@ -9,7 +9,7 @@ export interface AuthUser {
   displayName: string | null;
   email: string | null;
   photoURL: string | null;
-  provider: 'google' | 'mock' | 'demo';
+  provider: 'google' | 'email' | 'mock' | 'demo';
 }
 
 export interface MeterReading {

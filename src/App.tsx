@@ -46,6 +46,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { BillSlipModal } from './components/BillSlipModal';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
+import { LoginPage } from './components/LoginPage';
 
 export function App() {
   const [readings, setReadings] = useState<MeterReading[]>(() => loadReadings());
@@ -57,6 +58,7 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unauthenticated');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<'app' | 'login'>('app');
 
   // Role permissions: 'owner' | 'editor' | 'viewer'
   const currentRole: UserRole = settings.currentRole || 'owner';
@@ -339,6 +341,37 @@ export function App() {
     }
   };
 
+  // Dedicated Login Page View
+  if (currentView === 'login') {
+    return (
+      <div className="relative">
+        <LoginPage
+          onLoginSuccess={(loggedUser) => {
+            setUser(loggedUser);
+            setCurrentView('app');
+          }}
+          onContinueAsGuest={() => setCurrentView('app')}
+          showToast={showToast}
+        />
+        {/* Toast Alert */}
+        {toastMessage && (
+          <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-medium shadow-lg flex items-center gap-1.5 animate-fade-in">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const handleOpenAuth = () => {
+    if (user) {
+      setIsAuthModalOpen(true);
+    } else {
+      setCurrentView('login');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-row selection:bg-amber-100 selection:text-amber-900">
       {/* Desktop Left Sidebar */}
@@ -356,7 +389,7 @@ export function App() {
         onOpenBillSlip={() => setIsBillSlipOpen(true)}
         onExportCSV={handleExportCSV}
         onStartTour={handleStartTour}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenAuth={handleOpenAuth}
       />
 
       {/* Main Content Area */}
@@ -390,7 +423,7 @@ export function App() {
           onOpenBillSlip={() => setIsBillSlipOpen(true)}
           onExportCSV={handleExportCSV}
           onStartTour={handleStartTour}
-          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onOpenAuth={handleOpenAuth}
         />
 
         {/* Dynamic Page Views */}

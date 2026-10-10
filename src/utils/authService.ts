@@ -3,6 +3,8 @@ import {
   supabase, 
   isSupabaseConfigured, 
   signInWithGoogleSupabase, 
+  signInWithEmailSupabase,
+  signUpWithEmailSupabase,
   signOutSupabase, 
   subscribeToSupabaseAuth,
   syncReadingsToSupabase,
@@ -10,6 +12,8 @@ import {
   fetchReadingsFromSupabase,
   fetchSettingsFromSupabase
 } from './supabase';
+
+export { signInWithEmailSupabase, signUpWithEmailSupabase };
 
 const CURRENT_USER_STORAGE_KEY = 'jodbill_active_auth_user';
 
