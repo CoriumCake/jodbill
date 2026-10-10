@@ -101,6 +101,10 @@ export function App() {
     const unsubscribe = subscribeToAuth((currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        setCurrentView('app');
+        if (window.location.hash.includes('access_token')) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
         setSyncStatus('syncing');
         fetchUserDataFromCloud(currentUser.uid).then((cloudData) => {
           if (cloudData) {
