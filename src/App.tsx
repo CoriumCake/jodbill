@@ -1,16 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { 
-  Zap, 
-  Droplets, 
-  Plus, 
-  ArrowRight, 
-  Calculator, 
-  Sparkles,
-  RotateCcw,
-  Camera,
-  Eye,
-  Edit3
-} from 'lucide-react';
+import { Eye, Sparkles } from 'lucide-react';
 import type { MeterReading, UserSettings, MeterType, UserRole, AuthUser, SyncStatus } from './types';
 import { 
   loadReadings, 
@@ -31,14 +20,14 @@ import { preloadOCRWorker } from './utils/ocrService';
 import { 
   subscribeToAuth, 
   pushUserDataToCloud, 
-  fetchUserDataFromCloud 
+  fetchUserDataFromCloud,
+  logoutUser 
 } from './utils/authService';
 import { subscribeToRoomRealtime } from './utils/supabase';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { HeroRealtimeCards } from './components/HeroRealtimeCards';
-import { ChartsSection } from './components/ChartsSection';
 import { HistoryTable } from './components/HistoryTable';
 import { ApplianceSimulator } from './components/ApplianceSimulator';
 import { RecordMeterModal } from './components/RecordMeterModal';
@@ -394,6 +383,11 @@ export function App() {
         onExportCSV={handleExportCSV}
         onStartTour={handleStartTour}
         onOpenAuth={handleOpenAuth}
+        onLogout={async () => {
+          await logoutUser();
+          setUser(null);
+          showToast('ออกจากระบบสำเร็จ');
+        }}
       />
 
       {/* Main Content Area */}
@@ -431,115 +425,18 @@ export function App() {
         />
 
         {/* Dynamic Page Views */}
-        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 pb-24 md:pb-8 space-y-6">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 pb-24 md:pb-8 space-y-6">
           {/* ================= TAB 1: DASHBOARD ================= */}
           {activeTab === 'dashboard' && (
-            <div className="space-y-5">
-              {/* Empty State Welcome Card (Shown only when readings count is 0) */}
-              {readings.length === 0 && (
-                <div className="clean-card p-6 sm:p-8 text-center bg-white border-dashed border-2 border-slate-200 space-y-4">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
-                    <Camera className="w-6 h-6" />
-                  </div>
-                  <div className="max-w-md mx-auto space-y-1">
-                    <h3 className="text-base font-bold text-slate-900">
-                      ยังไม่มีข้อมูลมิเตอร์ในระบบ
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      เริ่มต้นด้วยการถ่ายรูปหรือพิมพ์เลขหน้าปัดมิเตอร์ไฟฟ้า/น้ำรอบปัจจุบันเพื่อเริ่มคำนวณบิล
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-center gap-3 pt-1">
-                    {currentRole !== 'viewer' ? (
-                      <button
-                        onClick={() => openRecordModal('electricity')}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>จดมิเตอร์ครั้งแรก</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setIsShareModalOpen(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs cursor-pointer active:scale-95 transition-all"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                        <span>ปลดล็อกสิทธิ์เพื่อเริ่มจด</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={handleLoadDemoData}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>ลองใส่ข้อมูลตัวอย่าง</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Hero Real-time Cards */}
-              <HeroRealtimeCards
-                summary={cycleSummary}
-                settings={settings}
-                onOpenRecord={openRecordModal}
-                hasReadings={readings.length > 0}
-              />
-
-              {/* Action Shortcuts */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  onClick={() => openRecordModal('electricity')}
-                  className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-amber-50 text-amber-600 border border-amber-200/60">
-                      <Zap className="w-4 h-4 fill-amber-500" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">ถ่ายรูปมิเตอร์ไฟ</h4>
-                      <span className="text-[11px] text-slate-500">สแกนตัวเลขด้วย OCR</span>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
-                </button>
-
-                <button
-                  onClick={() => openRecordModal('water')}
-                  className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-cyan-50 text-cyan-600 border border-cyan-200/60">
-                      <Droplets className="w-4 h-4 fill-cyan-500" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">ถ่ายรูปมิเตอร์น้ำ</h4>
-                      <span className="text-[11px] text-slate-500">บันทึกค่าน้ำประปา</span>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
-                </button>
-
-                <button
-                  onClick={() => setActiveTab('simulator')}
-                  className="clean-card clean-card-hover p-4 flex items-center justify-between text-left group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                      <Calculator className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">คำนวณค่าไฟแอร์</h4>
-                      <span className="text-[11px] text-slate-500">เปิดกี่ ชม. กินไฟกี่บาท</span>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 group-hover:text-slate-700 transition-all" />
-                </button>
-              </div>
-
-              {/* Interactive Charts */}
-              <ChartsSection readings={readings} settings={settings} />
-            </div>
+            <HeroRealtimeCards
+              summary={cycleSummary}
+              settings={settings}
+              readings={readings}
+              onOpenRecord={openRecordModal}
+              onOpenBillSlip={() => setIsBillSlipOpen(true)}
+              onOpenShare={() => setIsShareModalOpen(true)}
+              hasReadings={readings.length > 0}
+            />
           )}
 
           {/* ================= TAB 2: HISTORY TABLE ================= */}
@@ -625,11 +522,27 @@ export function App() {
         onUpgradeRole={handleUpgradeRole}
       />
 
-      {/* Toast Alert */}
+      {/* Toast Alert matching the reference alert card at bottom-right */}
       {toastMessage && (
-        <div className="fixed bottom-20 md:bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-medium shadow-lg flex items-center gap-1.5 animate-fade-in">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>{toastMessage}</span>
+        <div className="fixed bottom-5 right-5 z-50 p-3.5 rounded-2xl bg-white border border-rose-200/90 shadow-lg text-slate-800 flex items-start gap-3 max-w-sm animate-fade-in">
+          <div className="w-5 h-5 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">
+            !
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-bold text-slate-900">
+              สถานะระบบ
+            </div>
+            <div className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+              {toastMessage}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="text-slate-400 hover:text-slate-600 text-sm ml-1 cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>
