@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Settings as SettingsIcon, 
@@ -13,6 +13,74 @@ import {
   Home
 } from 'lucide-react';
 import type { UserSettings, DormFlatRateConfig, GovernmentRateConfig, WaterBillingType } from '../types';
+
+interface NumericInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> {
+  value: number | undefined | null;
+  onChange: (val: number) => void;
+  allowDecimals?: boolean;
+}
+
+const NumericInput: React.FC<NumericInputProps> = ({
+  value,
+  onChange,
+  allowDecimals = true,
+  className,
+  placeholder,
+  ...props
+}) => {
+  const [text, setText] = useState<string>(
+    value !== undefined && value !== null ? value.toString() : ''
+  );
+
+  useEffect(() => {
+    const currentNum = parseFloat(text);
+    if (value !== undefined && value !== null) {
+      if (text === '' && value === 0) return;
+      if (currentNum !== value) {
+        setText(value.toString());
+      }
+    } else if (text !== '') {
+      setText('');
+    }
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      inputMode={allowDecimals ? 'decimal' : 'numeric'}
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => {
+        const raw = e.target.value;
+        if (raw === '') {
+          setText('');
+          onChange(0);
+          return;
+        }
+        const regex = allowDecimals ? /^-?\d*\.?\d*$/ : /^-?\d*$/;
+        if (regex.test(raw)) {
+          setText(raw);
+          const parsed = parseFloat(raw);
+          if (!isNaN(parsed)) {
+            onChange(parsed);
+          }
+        }
+      }}
+      onBlur={() => {
+        if (text === '' || isNaN(parseFloat(text))) {
+          setText('0');
+          onChange(0);
+        } else {
+          const parsed = parseFloat(text);
+          setText(parsed.toString());
+          onChange(parsed);
+        }
+      }}
+      className={className}
+      {...props}
+    />
+  );
+};
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -199,11 +267,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       ค่าไฟฟ้าต่อหน่วย (บาท/หน่วย)
                     </label>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        step="0.5"
+                      <NumericInput
                         value={dormRate.electricityUnitRate}
-                        onChange={(e) => updateDormRate({ electricityUnitRate: parseFloat(e.target.value) || 0 })}
+                        onChange={(val) => updateDormRate({ electricityUnitRate: val })}
                         className="w-32 bg-white text-base font-bold font-mono text-slate-900 px-3 py-1.5 rounded-lg border border-slate-300 focus:border-slate-800 focus:outline-none"
                       />
                       <span className="text-slate-500 text-[11px]">ส่วนใหญ่หอพักอยู่ที่ 7 - 9 บาท</span>
@@ -256,11 +322,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           ค่าน้ำเหมาจ่ายต่อเดือน (บาท/ห้อง)
                         </label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            step="10"
+                          <NumericInput
                             value={dormRate.waterFlatMonthlyFee ?? 150}
-                            onChange={(e) => updateDormRate({ waterFlatMonthlyFee: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateDormRate({ waterFlatMonthlyFee: val })}
                             className="w-32 bg-slate-50 text-base font-bold font-mono text-slate-900 px-3 py-1.5 rounded-lg border border-slate-300"
                           />
                           <span className="text-[11px] text-slate-500">บาทต่อเดือน (ยอดคงที่ทุกรอบบิล)</span>
@@ -274,11 +338,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <label className="font-medium text-slate-700 block mb-1">
                             ค่าน้ำต่อคน (บาท/คน)
                           </label>
-                          <input
-                            type="number"
-                            step="10"
+                          <NumericInput
                             value={dormRate.waterFeePerPerson ?? 100}
-                            onChange={(e) => updateDormRate({ waterFeePerPerson: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateDormRate({ waterFeePerPerson: val })}
                             className="w-full bg-slate-50 text-base font-bold font-mono text-slate-900 px-3 py-1.5 rounded-lg border border-slate-300"
                           />
                         </div>
@@ -287,12 +349,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <Users className="w-3 h-3 text-slate-500" />
                             จำนวนผู้อยู่อาศัย (คน)
                           </label>
-                          <input
-                            type="number"
-                            min="1"
-                            max="10"
+                          <NumericInput
+                            allowDecimals={false}
                             value={dormRate.waterPersonCount ?? 1}
-                            onChange={(e) => updateDormRate({ waterPersonCount: parseInt(e.target.value) || 1 })}
+                            onChange={(val) => updateDormRate({ waterPersonCount: Math.max(1, Math.round(val)) })}
                             className="w-full bg-slate-50 text-base font-bold font-mono text-slate-900 px-3 py-1.5 rounded-lg border border-slate-300"
                           />
                         </div>
@@ -308,11 +368,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           ค่าน้ำต่อยูนิต (บาท/m³)
                         </label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            step="1"
+                          <NumericInput
                             value={dormRate.waterUnitRate ?? 18}
-                            onChange={(e) => updateDormRate({ waterUnitRate: parseFloat(e.target.value) || 0 })}
+                            onChange={(val) => updateDormRate({ waterUnitRate: val })}
                             className="w-32 bg-slate-50 text-base font-bold font-mono text-slate-900 px-3 py-1.5 rounded-lg border border-slate-300"
                           />
                           <span className="text-[11px] text-slate-500">ส่วนใหญ่หอพักอยู่ที่ 17 - 20 บาท/ยูนิต</span>
@@ -347,12 +405,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     <div>
                       <label className="font-medium text-slate-700 block mb-1">ค่า Ft (บาท/หน่วย)</label>
-                      <input
-                        type="number"
-                        step="0.01"
+                      <NumericInput
                         value={(formData.rateConfig as GovernmentRateConfig).ftRate}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
+                        onChange={(val) => {
                           setFormData({
                             ...formData,
                             rateConfig: { ...formData.rateConfig, ftRate: val } as GovernmentRateConfig,
@@ -425,13 +480,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="text-[10px] text-slate-400 font-mono">ใส่ 0 หากไม่มี</span>
                 </div>
                 <div className="relative">
-                  <input
-                    type="number"
-                    step="100"
+                  <NumericInput
                     value={formData.monthlyRent ?? 0}
-                    onChange={(e) =>
-                      setFormData({ ...formData, monthlyRent: Math.max(0, parseFloat(e.target.value) || 0) })
-                    }
+                    onChange={(val) => setFormData({ ...formData, monthlyRent: Math.max(0, val) })}
                     placeholder="เช่น 3500 หรือ 4500"
                     className="w-full bg-white text-sm font-bold font-mono text-slate-900 px-3 py-2 rounded-lg border border-slate-300 focus:border-slate-800 focus:outline-none"
                   />
@@ -470,11 +521,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="font-semibold text-slate-700 block mb-1">
                     งบค่าไฟ (บาท/เดือน)
                   </label>
-                  <input
-                    type="number"
-                    step="100"
+                  <NumericInput
                     value={formData.budgetElectricity}
-                    onChange={(e) => setFormData({ ...formData, budgetElectricity: parseFloat(e.target.value) || 0 })}
+                    onChange={(val) => setFormData({ ...formData, budgetElectricity: val })}
                     className="w-full bg-white text-base font-bold font-mono text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-300"
                   />
                 </div>
@@ -483,11 +532,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="font-semibold text-slate-700 block mb-1">
                     งบค่าน้ำ (บาท/เดือน)
                   </label>
-                  <input
-                    type="number"
-                    step="50"
+                  <NumericInput
                     value={formData.budgetWater}
-                    onChange={(e) => setFormData({ ...formData, budgetWater: parseFloat(e.target.value) || 0 })}
+                    onChange={(val) => setFormData({ ...formData, budgetWater: val })}
                     className="w-full bg-white text-base font-bold font-mono text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-300"
                   />
                 </div>

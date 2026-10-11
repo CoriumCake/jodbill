@@ -530,19 +530,34 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
 
             <div className="relative">
               <input
-                type="number"
-                step="0.1"
+                type="text"
+                inputMode="decimal"
                 placeholder={previousValue > 0 ? (previousValue + 1).toFixed(1) : '2190.0'}
                 value={readingInput}
                 onChange={(e) => {
-                  setReadingInput(e.target.value);
-                  setDetectedProvider('manual');
+                  const val = e.target.value;
+                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                    setReadingInput(val);
+                    setDetectedProvider('manual');
+                  }
                 }}
                 className="w-full bg-slate-50 text-2xl font-black font-mono text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-800 focus:bg-white focus:outline-none"
               />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 font-mono">
-                {meterType === 'electricity' ? 'kWh' : 'm³'}
-              </span>
+              <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {readingInput && (
+                  <button
+                    type="button"
+                    onClick={() => setReadingInput('')}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200/60 transition-colors cursor-pointer"
+                    title="ล้างค่า"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                <span className="text-xs font-semibold text-slate-400 font-mono">
+                  {meterType === 'electricity' ? 'kWh' : 'm³'}
+                </span>
+              </div>
             </div>
 
             {/* Quick Step Buttons */}
