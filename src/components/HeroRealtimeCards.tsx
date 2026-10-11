@@ -132,7 +132,11 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
       }));
   }, [readings, settings.rateConfig, isWaterFlatFee, flatWaterCost, displayMode]);
 
-  // Total projected calculation
+  // Total calculations
+  const totalCurrent = monthlyRent > 0 
+    ? summary.totalCurrentWithRent 
+    : summary.totalCurrentCost;
+
   const totalProjected = monthlyRent > 0 
     ? summary.totalProjectedWithRent 
     : summary.totalProjectedCost;
@@ -211,15 +215,15 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold text-slate-500">
-              ยอดรวมโดยประมาณ
+              ยอดรวมโดยประมาณ (สิ้นเดือน)
             </div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-mono mt-0.5">
               {totalProjected > 0 ? `฿${totalProjected.toLocaleString()}` : '— ฿'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 truncate">
               {monthlyRent > 0
-                ? `รวมค่าเช่าห้อง ฿${monthlyRent.toLocaleString()}`
-                : 'รวมค่าน้ำและค่าไฟฟ้า'}
+                ? `รวมค่าเช่าห้อง ฿${monthlyRent.toLocaleString()} • ปัจจุบัน ฿${totalCurrent.toLocaleString()}`
+                : `ยอดใช้จริงสะสมแล้ว ฿${totalCurrent.toLocaleString()}`}
             </div>
           </div>
         </div>
@@ -510,11 +514,19 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                 </div>
               )}
 
-              <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between font-bold text-slate-900">
-                <span>ยอดรวมสุทธิ</span>
-                <span className="text-base font-extrabold text-slate-900 font-mono">
-                  ฿{totalProjected.toLocaleString()}
-                </span>
+              <div className="pt-2.5 border-t border-slate-200/80 space-y-1.5">
+                <div className="flex items-center justify-between font-bold text-slate-900">
+                  <span>ยอดใช้จริงสะสม ณ ปัจจุบัน</span>
+                  <span className="text-base font-extrabold text-emerald-700 font-mono">
+                    ฿{totalCurrent.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-100/80 px-2 py-1 rounded-lg">
+                  <span>ประมาณการสิ้นเดือน (30 วัน)</span>
+                  <span className="font-mono font-semibold text-slate-700">
+                    ~฿{totalProjected.toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
