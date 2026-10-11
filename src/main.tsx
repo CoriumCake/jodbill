@@ -15,6 +15,7 @@ if (
       .register('/sw.js')
       .then((reg) => {
         console.log('JodBill PWA Service Worker registered successfully:', reg.scope);
+        reg.update();
       })
       .catch((err) => {
         console.warn('JodBill Service Worker registration failed:', err);

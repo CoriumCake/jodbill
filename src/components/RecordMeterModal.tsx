@@ -534,6 +534,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                 inputMode="decimal"
                 placeholder={previousValue > 0 ? (previousValue + 1).toFixed(1) : '2190.0'}
                 value={readingInput}
+                onFocus={(e) => e.target.select()}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === '' || /^\d*\.?\d*$/.test(val)) {

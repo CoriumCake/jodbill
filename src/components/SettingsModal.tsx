@@ -18,29 +18,29 @@ interface NumericInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   value: number | undefined | null;
   onChange: (val: number) => void;
   allowDecimals?: boolean;
+  min?: number;
+  max?: number;
 }
 
 const NumericInput: React.FC<NumericInputProps> = ({
   value,
   onChange,
   allowDecimals = true,
+  min,
+  max,
   className,
   placeholder,
   ...props
 }) => {
-  const [text, setText] = useState<string>(
+  const isFocusedRef = React.useRef(false);
+  const [text, setText] = useState<string>(() =>
     value !== undefined && value !== null ? value.toString() : ''
   );
 
+  // Sync external value strictly when NOT focused by user
   useEffect(() => {
-    const currentNum = parseFloat(text);
-    if (value !== undefined && value !== null) {
-      if (text === '' && value === 0) return;
-      if (currentNum !== value) {
-        setText(value.toString());
-      }
-    } else if (text !== '') {
-      setText('');
+    if (!isFocusedRef.current) {
+      setText(value !== undefined && value !== null ? value.toString() : '');
     }
   }, [value]);
 
@@ -50,8 +50,15 @@ const NumericInput: React.FC<NumericInputProps> = ({
       inputMode={allowDecimals ? 'decimal' : 'numeric'}
       value={text}
       placeholder={placeholder}
+      onFocus={(e) => {
+        isFocusedRef.current = true;
+        // Select entire text on focus so user can immediately replace or backspace
+        e.target.select();
+        props.onFocus?.(e);
+      }}
       onChange={(e) => {
         const raw = e.target.value;
+        // If empty, allow user to freely backspace everything
         if (raw === '') {
           setText('');
           onChange(0);
@@ -66,15 +73,21 @@ const NumericInput: React.FC<NumericInputProps> = ({
           }
         }
       }}
-      onBlur={() => {
-        if (text === '' || isNaN(parseFloat(text))) {
-          setText('0');
-          onChange(0);
+      onBlur={(e) => {
+        isFocusedRef.current = false;
+        const parsed = parseFloat(text);
+        if (text.trim() === '' || isNaN(parsed)) {
+          const fallback = min !== undefined ? min : 0;
+          setText(fallback.toString());
+          onChange(fallback);
         } else {
-          const parsed = parseFloat(text);
-          setText(parsed.toString());
-          onChange(parsed);
+          let finalVal = parsed;
+          if (min !== undefined && finalVal < min) finalVal = min;
+          if (max !== undefined && finalVal > max) finalVal = max;
+          setText(finalVal.toString());
+          onChange(finalVal);
         }
+        props.onBlur?.(e);
       }}
       className={className}
       {...props}
@@ -105,10 +118,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'general' | 'rates' | 'budget' | 'ai' | 'backup'>('rates');
   const [importStatus, setImportStatus] = useState<string | null>(null);
 
+  // Sync settings when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setFormData(settings);
+    }
+  }, [isOpen, settings]);
+
   if (!isOpen) return null;
 
   const handleSave = () => {
-    onSaveSettings(formData);
+    const validated = { ...formData };
+    if (validated.rateConfig.mode === 'dorm_flat') {
+      const dorm = { ...validated.rateConfig };
+      if (!dorm.waterPersonCount || dorm.waterPersonCount < 1) {
+        dorm.waterPersonCount = 1;
+      }
+      if (dorm.electricityUnitRate === undefined || dorm.electricityUnitRate < 0) {
+        dorm.electricityUnitRate = 0;
+      }
+      if (dorm.waterFeePerPerson === undefined || dorm.waterFeePerPerson < 0) {
+        dorm.waterFeePerPerson = 0;
+      }
+      if (dorm.waterFlatMonthlyFee === undefined || dorm.waterFlatMonthlyFee < 0) {
+        dorm.waterFlatMonthlyFee = 0;
+      }
+      if (dorm.waterUnitRate === undefined || dorm.waterUnitRate < 0) {
+        dorm.waterUnitRate = 0;
+      }
+      validated.rateConfig = dorm;
+    }
+    onSaveSettings(validated);
     onClose();
   };
 
@@ -351,13 +391,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           </label>
                           <NumericInput
                             allowDecimals={false}
+                            min={1}
                             value={dormRate.waterPersonCount ?? 1}
-                            onChange={(val) => updateDormRate({ waterPersonCount: Math.max(1, Math.round(val)) })}
+                            onChange={(val) => updateDormRate({ waterPersonCount: val })}
                             className="w-full bg-slate-50 text-base font-bold font-mono text-slate-900 px-3 py-1.5 rounded-lg border border-slate-300"
                           />
                         </div>
                         <div className="col-span-2 text-[11px] text-cyan-700 font-medium">
-                          รวมค่าน้ำเหมาจ่าย = {(dormRate.waterFeePerPerson ?? 100) * (dormRate.waterPersonCount ?? 1)} บาท/เดือน
+                          รวมค่าน้ำเหมาจ่าย = {(dormRate.waterFeePerPerson ?? 100) * (dormRate.waterPersonCount || 1)} บาท/เดือน
                         </div>
                       </div>
                     )}
