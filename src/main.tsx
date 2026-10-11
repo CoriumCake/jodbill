@@ -10,6 +10,15 @@ if (
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1')
 ) {
+  // Automatically reload when service worker updates to latest version
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
