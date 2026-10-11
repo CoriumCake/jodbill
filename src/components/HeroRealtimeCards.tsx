@@ -6,7 +6,6 @@ import {
   Maximize2, 
   ArrowRight,
   Building,
-  Sprout,
   FileText,
   Share2,
   MapPin
@@ -21,6 +20,7 @@ import {
 } from 'recharts';
 import type { CycleSummary, UserSettings, MeterReading } from '../types';
 import { calculateElectricityCost, calculateWaterCost } from '../utils/rateCalculator';
+import { ThaiBahtIcon } from './ThaiBahtIcon';
 
 interface HeroRealtimeCardsProps {
   summary: CycleSummary;
@@ -162,13 +162,12 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
         </div>
       </div>
 
-      {/* 2. Three Metric Cards Row (matches 3 cards in reference) */}
+      {/* 2. Three Metric Cards Row (Minimal style without background boxes) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
-        {/* Card 1: ค่าไฟ (matches อุณหภูมิ / red icon) */}
+        {/* Card 1: ค่าไฟ (ไอคอนไฟฟ้าสีเหลือง minimal ไม่มีพื้นหลัง) */}
         <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/70 shadow-2xs hover:shadow-xs transition-all flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center shrink-0">
-            {/* Thermometer / Zap Icon */}
-            <Zap className="w-6 h-6 text-rose-500 fill-rose-500" />
+          <div className="shrink-0 flex items-center justify-center">
+            <Zap className="w-8 h-8 sm:w-9 sm:h-9 text-amber-500 fill-amber-400 stroke-amber-500 stroke-[1.5]" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold text-slate-500">
@@ -185,10 +184,10 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
           </div>
         </div>
 
-        {/* Card 2: ค่าน้ำ (matches ความชื้นอากาศ / blue droplet icon) */}
+        {/* Card 2: ค่าน้ำ (ไอคอนหยดน้ำ 2 หยด minimal ไม่มีพื้นหลัง) */}
         <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/70 shadow-2xs hover:shadow-xs transition-all flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-sky-50 flex items-center justify-center shrink-0">
-            <Droplets className="w-6 h-6 text-sky-500 fill-sky-500" />
+          <div className="shrink-0 flex items-center justify-center">
+            <Droplets className="w-8 h-8 sm:w-9 sm:h-9 text-sky-500 stroke-sky-500 stroke-[1.8] fill-sky-400/25" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold text-slate-500">
@@ -205,10 +204,10 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
           </div>
         </div>
 
-        {/* Card 3: ยอดรวมรอบนี้ / ความชื้นดิน (matches green sprout icon) */}
+        {/* Card 3: ยอดรวมโดยประมาณ (ไอคอนเงินบาทสีเขียว minimal ไม่มีพื้นหลัง) */}
         <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/70 shadow-2xs hover:shadow-xs transition-all flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center shrink-0">
-            <Sprout className="w-6 h-6 text-emerald-500" />
+          <div className="shrink-0 flex items-center justify-center">
+            <ThaiBahtIcon className="w-8 h-8 sm:w-9 sm:h-9 text-emerald-500" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold text-slate-500">
