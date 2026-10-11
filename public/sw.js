@@ -1,5 +1,5 @@
 // JodBill PWA Service Worker
-const CACHE_NAME = 'jodbill-pwa-v2';
+const CACHE_NAME = 'jodbill-pwa-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -12,6 +12,7 @@ const STATIC_ASSETS = [
 
 // Install Event: Cache Core Shell
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS).catch((err) => {
@@ -19,10 +20,9 @@ self.addEventListener('install', (event) => {
       });
     })
   );
-  self.skipWaiting();
 });
 
-// Activate Event: Cleanup Old Caches
+// Activate Event: Cleanup Old Caches and Claim Clients
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -33,9 +33,8 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // Fetch Event: Network-first with cache fallback
