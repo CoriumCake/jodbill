@@ -20,6 +20,7 @@ import {
   Tooltip 
 } from 'recharts';
 import type { CycleSummary, UserSettings, MeterReading } from '../types';
+import { calculateElectricityCost, calculateWaterCost } from '../utils/rateCalculator';
 
 interface HeroRealtimeCardsProps {
   summary: CycleSummary;
@@ -42,33 +43,94 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
 }) => {
   const { electricity, water, monthlyRent } = summary;
   const [activeMetricTab, setActiveMetricTab] = useState<'both' | 'electricity' | 'water'>('both');
+  const [displayMode, setDisplayMode] = useState<'cost' | 'units'>('cost');
 
-  // Format chart data from readings if available
+  const isWaterFlatFee = summary.water.isFlatFee;
+  const flatWaterCost = summary.water.currentCost;
+
+  // Format chart data with cost & units from readings
   const chartData = React.useMemo(() => {
     if (!readings || readings.length === 0) return [];
     const sorted = [...readings].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
-    const map = new Map<string, { date: string; electricity: number; water: number }>();
-    sorted.forEach((r) => {
-      const d = new Date(r.timestamp).toLocaleDateString('th-TH', {
+    const elecReadings = sorted.filter((r) => r.meterType === 'electricity');
+    const waterReadings = sorted.filter((r) => r.meterType === 'water');
+
+    const elecBase = elecReadings.length > 0 ? elecReadings[0].reading : 0;
+    const waterBase = waterReadings.length > 0 ? waterReadings[0].reading : 0;
+
+    const dateMap = new Map<string, {
+      date: string;
+      rawDate: Date;
+      electricityUnits: number;
+      electricityCost: number;
+      waterUnits: number;
+      waterCost: number;
+    }>();
+
+    // Map electricity readings chronologically
+    elecReadings.forEach((r) => {
+      const d = new Date(r.timestamp);
+      const dKey = d.toLocaleDateString('th-TH', {
         day: 'numeric',
         month: 'short',
       });
-      if (!map.has(d)) {
-        map.set(d, { date: d, electricity: 0, water: 0 });
-      }
-      const item = map.get(d)!;
-      if (r.meterType === 'electricity') {
-        item.electricity = r.reading;
-      } else {
-        item.water = r.reading;
-      }
+      const units = Math.max(0, Math.round((r.reading - elecBase) * 10) / 10);
+      const costCalc = calculateElectricityCost(units, settings.rateConfig);
+
+      dateMap.set(dKey, {
+        date: dKey,
+        rawDate: d,
+        electricityUnits: units,
+        electricityCost: costCalc.totalCost,
+        waterUnits: 0,
+        waterCost: isWaterFlatFee ? flatWaterCost : 0,
+      });
     });
 
-    return Array.from(map.values()).slice(-7);
-  }, [readings]);
+    // Map water readings if metered
+    if (!isWaterFlatFee && waterReadings.length > 0) {
+      waterReadings.forEach((r) => {
+        const d = new Date(r.timestamp);
+        const dKey = d.toLocaleDateString('th-TH', {
+          day: 'numeric',
+          month: 'short',
+        });
+        const units = Math.max(0, Math.round((r.reading - waterBase) * 10) / 10);
+        const costCalc = calculateWaterCost(units, settings.rateConfig);
+
+        if (dateMap.has(dKey)) {
+          const item = dateMap.get(dKey)!;
+          item.waterUnits = units;
+          item.waterCost = costCalc.totalCost;
+        } else {
+          dateMap.set(dKey, {
+            date: dKey,
+            rawDate: d,
+            electricityUnits: 0,
+            electricityCost: 0,
+            waterUnits: units,
+            waterCost: costCalc.totalCost,
+          });
+        }
+      });
+    }
+
+    return Array.from(dateMap.values())
+      .sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime())
+      .slice(-7)
+      .map((item) => ({
+        date: item.date,
+        electricity: displayMode === 'cost' ? item.electricityCost : item.electricityUnits,
+        water: displayMode === 'cost' ? item.waterCost : item.waterUnits,
+        electricityCost: item.electricityCost,
+        electricityUnits: item.electricityUnits,
+        waterCost: item.waterCost,
+        waterUnits: item.waterUnits,
+      }));
+  }, [readings, settings.rateConfig, isWaterFlatFee, flatWaterCost, displayMode]);
 
   // Total projected calculation
   const totalProjected = monthlyRent > 0 
@@ -178,34 +240,62 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                 ประวัติและการใช้พลังงาน
               </h3>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {chartData.length > 0 && (
-                <div className="flex items-center gap-1 text-[11px] bg-slate-50 p-1 rounded-lg border border-slate-200/60">
-                  <button
-                    onClick={() => setActiveMetricTab('both')}
-                    className={`px-2 py-0.5 rounded-md font-medium transition-all ${
-                      activeMetricTab === 'both' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
-                    }`}
-                  >
-                    ทั้งหมด
-                  </button>
-                  <button
-                    onClick={() => setActiveMetricTab('electricity')}
-                    className={`px-2 py-0.5 rounded-md font-medium transition-all ${
-                      activeMetricTab === 'electricity' ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-500'
-                    }`}
-                  >
-                    ไฟ
-                  </button>
-                  <button
-                    onClick={() => setActiveMetricTab('water')}
-                    className={`px-2 py-0.5 rounded-md font-medium transition-all ${
-                      activeMetricTab === 'water' ? 'bg-white text-sky-700 shadow-2xs' : 'text-slate-500'
-                    }`}
-                  >
-                    น้ำ
-                  </button>
-                </div>
+                <>
+                  {/* Mode Toggle: Cost (฿) vs Units */}
+                  <div className="flex items-center gap-0.5 text-[11px] bg-slate-50 p-1 rounded-lg border border-slate-200/60">
+                    <button
+                      type="button"
+                      onClick={() => setDisplayMode('cost')}
+                      className={`px-2 py-0.5 rounded-md font-medium transition-all ${
+                        displayMode === 'cost' ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      ยอดเงิน (฿)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDisplayMode('units')}
+                      className={`px-2 py-0.5 rounded-md font-medium transition-all ${
+                        displayMode === 'units' ? 'bg-white text-slate-900 shadow-2xs font-semibold' : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      หน่วย
+                    </button>
+                  </div>
+
+                  {/* Filter: Both / Elec / Water */}
+                  <div className="flex items-center gap-1 text-[11px] bg-slate-50 p-1 rounded-lg border border-slate-200/60">
+                    <button
+                      type="button"
+                      onClick={() => setActiveMetricTab('both')}
+                      className={`px-2 py-0.5 rounded-md font-medium transition-all ${
+                        activeMetricTab === 'both' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
+                      }`}
+                    >
+                      ทั้งหมด
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMetricTab('electricity')}
+                      className={`px-2 py-0.5 rounded-md font-medium transition-all ${
+                        activeMetricTab === 'electricity' ? 'bg-white text-amber-700 shadow-2xs' : 'text-slate-500'
+                      }`}
+                    >
+                      ไฟ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMetricTab('water')}
+                      className={`px-2 py-0.5 rounded-md font-medium transition-all ${
+                        activeMetricTab === 'water' ? 'bg-white text-sky-700 shadow-2xs' : 'text-slate-500'
+                      }`}
+                    >
+                      น้ำ
+                    </button>
+                  </div>
+                </>
               )}
               <button
                 type="button"
@@ -220,7 +310,29 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
 
           {/* Chart or Placeholder */}
           <div className="flex-1 flex items-center justify-center w-full min-h-[220px]">
-            {chartData.length > 0 ? (
+            {activeMetricTab === 'water' && isWaterFlatFee ? (
+              <div className="w-full h-56 flex flex-col items-center justify-center p-6 text-center space-y-3 bg-sky-50/50 rounded-xl border border-sky-100">
+                <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center">
+                  <Droplets className="w-6 h-6 fill-sky-600" />
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-slate-900">
+                    ค่าน้ำเหมาจ่าย {summary.water.flatFeeDetail || `฿${flatWaterCost}/เดือน`}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                    หอพักของคุณกำหนดค่าน้ำเป็นยอดเหมาจ่ายคงที่ <strong>฿{flatWaterCost.toLocaleString()} / เดือน</strong> ไม่คิดตามมิเตอร์ จึงไม่ต้องจดเลขหน้าปัดน้ำ
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <span className="px-3 py-1 rounded-lg bg-white border border-sky-200 text-sky-800 text-xs font-mono font-bold shadow-2xs">
+                    ยอดคงที่: ฿{flatWaterCost.toLocaleString()} / เดือน
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    (เหมาจ่าย ไม่ใช้มิเตอร์)
+                  </span>
+                </div>
+              </div>
+            ) : chartData.length > 0 ? (
               <div className="w-full h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -235,21 +347,56 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                    <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                    <YAxis 
+                      stroke="#94a3b8" 
+                      fontSize={11} 
+                      tickLine={false}
+                      tickFormatter={(val) => displayMode === 'cost' ? `฿${val}` : `${val}`}
+                    />
                     <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#ffffff',
-                        borderColor: '#e2e8f0',
-                        borderRadius: '0.75rem',
-                        fontSize: '12px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || payload.length === 0) return null;
+                        return (
+                          <div className="p-2.5 rounded-xl border border-slate-200 bg-white shadow-md text-xs space-y-1.5 min-w-[150px]">
+                            <p className="font-bold text-slate-800 border-b border-slate-100 pb-1">{label}</p>
+                            {payload.map((entry: any, idx: number) => {
+                              const isElec = entry.dataKey === 'electricity';
+                              const isWater = entry.dataKey === 'water';
+                              const color = isElec ? '#f59e0b' : '#0ea5e9';
+                              
+                              let title = isElec ? 'ไฟฟ้า' : 'น้ำประปา';
+                              let valText = '';
+                              
+                              if (displayMode === 'cost') {
+                                title = isElec ? 'ค่าไฟ' : (isWaterFlatFee ? 'ค่าน้ำ (เหมาจ่าย)' : 'ค่าน้ำ');
+                                valText = `฿${Number(entry.value).toLocaleString()}`;
+                              } else {
+                                if (isWater && isWaterFlatFee) {
+                                  valText = 'เหมาจ่าย (ไม่มีมิเตอร์)';
+                                } else {
+                                  valText = `${entry.value} ${isElec ? 'หน่วย' : 'ยูนิต'}`;
+                                }
+                              }
+
+                              return (
+                                <div key={idx} className="flex items-center justify-between gap-3">
+                                  <span className="flex items-center gap-1.5 font-medium text-slate-600">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                                    <span>{title}:</span>
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-900">{valText}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
                       }}
                     />
                     {(activeMetricTab === 'both' || activeMetricTab === 'electricity') && (
                       <Area
                         type="monotone"
                         dataKey="electricity"
-                        name="มิเตอร์ไฟ"
+                        name={displayMode === 'cost' ? 'ค่าไฟ' : 'ไฟ (หน่วย)'}
                         stroke="#f59e0b"
                         strokeWidth={2}
                         fillOpacity={1}
@@ -260,7 +407,7 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                       <Area
                         type="monotone"
                         dataKey="water"
-                        name="มิเตอร์น้ำ"
+                        name={displayMode === 'cost' ? (isWaterFlatFee ? 'ค่าน้ำ (เหมาจ่าย)' : 'ค่าน้ำ') : 'น้ำ (ยูนิต)'}
                         stroke="#0ea5e9"
                         strokeWidth={2}
                         fillOpacity={1}

@@ -1,5 +1,5 @@
 // JodBill PWA Service Worker
-const CACHE_NAME = 'jodbill-pwa-v4';
+const CACHE_NAME = 'jodbill-pwa-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
