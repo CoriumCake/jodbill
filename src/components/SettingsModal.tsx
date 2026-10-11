@@ -5,7 +5,6 @@ import {
   Building2, 
   Zap, 
   Droplets, 
-  Key, 
   Database, 
   Save, 
   RotateCcw, 
@@ -109,7 +108,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             { id: 'rates', label: 'เรทราคา & ค่าน้ำเหมาจ่าย', icon: Zap },
             { id: 'general', label: 'ข้อมูลห้อง', icon: Building2 },
             { id: 'budget', label: 'งบประมาณ', icon: Droplets },
-            { id: 'ai', label: 'Gemini AI', icon: Key },
             { id: 'backup', label: 'จัดการข้อมูล', icon: Database },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -493,41 +491,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="w-full bg-white text-base font-bold font-mono text-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-300"
                   />
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: GEMINI AI */}
-          {activeTab === 'ai' && (
-            <div className="space-y-3">
-              <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200/60 text-purple-900 space-y-1">
-                <span className="font-bold flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5" /> Google Gemini Vision AI
-                </span>
-                <p className="text-[11px] text-purple-800">
-                  ใส่ API Key เพื่อเพิ่มความแม่นยำในการอ่านมิเตอร์แบบล้อหมุนเก่าหรือตัวเลขเบลอ
-                </p>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-purple-700 font-semibold underline block"
-                >
-                  👉 ขอรับ Gemini API Key ฟรี
-                </a>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">
-                  Gemini API Key
-                </label>
-                <input
-                  type="password"
-                  value={formData.geminiApiKey || ''}
-                  onChange={(e) => setFormData({ ...formData, geminiApiKey: e.target.value })}
-                  placeholder="AIzaSy..."
-                  className="w-full bg-slate-50 font-mono text-slate-800 px-3 py-2 rounded-lg border border-slate-200 focus:border-slate-800 focus:bg-white focus:outline-none"
-                />
               </div>
             </div>
           )}

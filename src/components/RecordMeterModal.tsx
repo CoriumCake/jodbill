@@ -16,6 +16,7 @@ import type { MeterType, MeterReading, UserSettings, OCRProvider } from '../type
 import { 
   performLocalOCR, 
   performGeminiVisionOCR, 
+  getGeminiApiKey,
   extractPhotoDate, 
   preloadOCRWorker,
   scanLiveCameraFrame
@@ -218,10 +219,11 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
 
     try {
       let result;
-      if (settings.geminiApiKey && settings.geminiApiKey.trim().length > 10) {
+      const geminiKey = getGeminiApiKey(settings.geminiApiKey);
+      if (geminiKey && geminiKey.trim().length > 10) {
         result = await performGeminiVisionOCR(
           dataUrl,
-          settings.geminiApiKey,
+          geminiKey,
           (p, s) => {
             setOcrProgress(p);
             setOcrStatusText(s);
@@ -521,11 +523,9 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
               </div>
             )}
 
-            {!settings.geminiApiKey && (
-              <div className="text-[11px] text-slate-500 bg-white/70 p-2 rounded-lg border border-slate-200/70 flex items-center justify-between">
-                <span>💡 <strong>คำแนะนำ:</strong> ถ่ายมุมตรงระยะใกล้ช่องตัวเลขเพื่อความแม่นยำ</span>
-              </div>
-            )}
+            <div className="text-[11px] text-slate-500 bg-white/70 p-2 rounded-lg border border-slate-200/70 flex items-center justify-between">
+              <span>💡 <strong>คำแนะนำ:</strong> ถ่ายมุมตรงระยะใกล้ช่องตัวเลขเพื่อความแม่นยำ</span>
+            </div>
           </div>
 
           {/* Number Input & Stepper */}

@@ -370,13 +370,22 @@ export async function scanLiveCameraFrame(
   }
 }
 
+export function getGeminiApiKey(customKey?: string): string | null {
+  return import.meta.env.VITE_GEMINI_API_KEY?.trim() || customKey?.trim() || null;
+}
+
 export async function performGeminiVisionOCR(
   imageDataUrl: string,
-  apiKey: string,
+  apiKey?: string,
   onProgress?: (progress: number, status: string) => void,
   previousReading?: number
 ): Promise<OCRResult> {
   try {
+    const effectiveKey = apiKey?.trim() || getGeminiApiKey();
+    if (!effectiveKey) {
+      throw new Error('ไม่พบ Gemini API Key ใน .env (VITE_GEMINI_API_KEY) หรือการตั้งค่า');
+    }
+
     if (onProgress) onProgress(20, 'กำลังเชื่อมต่อ Gemini AI Vision...');
 
     const mimeMatch = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
@@ -409,7 +418,7 @@ Instructions:
     if (onProgress) onProgress(50, 'Gemini กำลังอ่านตัวเลขหน้าปัดมิเตอร์...');
 
     let response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${effectiveKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -437,7 +446,7 @@ Instructions:
 
     if (!response.ok) {
       response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
