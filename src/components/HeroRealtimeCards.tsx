@@ -174,11 +174,11 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
             <Zap className="w-8 h-8 sm:w-9 sm:h-9 text-amber-500 fill-amber-400 stroke-amber-500 stroke-[1.5]" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-slate-500">
+            <div className="text-xs font-medium text-slate-500">
               ค่าไฟรอบนี้
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-mono mt-0.5">
-              {electricity.currentCost > 0 ? `฿${electricity.currentCost.toLocaleString()}` : '— ฿'}
+            <div className="text-2xl sm:text-3xl font-normal text-slate-800 tracking-tight mt-0.5">
+              {electricity.currentCost > 0 ? electricity.currentCost.toLocaleString() : '—'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 truncate">
               {electricity.dailyAvgUnits > 0
@@ -194,11 +194,11 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
             <Droplets className="w-8 h-8 sm:w-9 sm:h-9 text-sky-500 stroke-sky-500 stroke-[1.8] fill-sky-400/25" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-slate-500">
+            <div className="text-xs font-medium text-slate-500">
               ค่าน้ำรอบนี้
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-mono mt-0.5">
-              {water.currentCost > 0 ? `฿${water.currentCost.toLocaleString()}` : '— ฿'}
+            <div className="text-2xl sm:text-3xl font-normal text-slate-800 tracking-tight mt-0.5">
+              {water.currentCost > 0 ? water.currentCost.toLocaleString() : '—'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 truncate">
               {water.dailyAvgUnits > 0
@@ -214,16 +214,16 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
             <ThaiBahtIcon className="w-8 h-8 sm:w-9 sm:h-9 text-emerald-500" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-slate-500">
+            <div className="text-xs font-medium text-slate-500">
               ยอดรวมโดยประมาณ (สิ้นเดือน)
             </div>
-            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight font-mono mt-0.5">
-              {totalProjected > 0 ? `฿${totalProjected.toLocaleString()}` : '— ฿'}
+            <div className="text-2xl sm:text-3xl font-normal text-slate-800 tracking-tight mt-0.5">
+              {totalProjected > 0 ? totalProjected.toLocaleString() : '—'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 truncate">
               {monthlyRent > 0
-                ? `รวมค่าเช่าห้อง ฿${monthlyRent.toLocaleString()} • ปัจจุบัน ฿${totalCurrent.toLocaleString()}`
-                : `ยอดใช้จริงสะสมแล้ว ฿${totalCurrent.toLocaleString()}`}
+                ? `รวมค่าเช่าห้อง ${monthlyRent.toLocaleString()} • ปัจจุบัน ${totalCurrent.toLocaleString()}`
+                : `ยอดใช้จริงสะสมแล้ว ${totalCurrent.toLocaleString()}`}
             </div>
           </div>
         </div>
@@ -327,8 +327,8 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="px-3 py-1 rounded-lg bg-white border border-sky-200 text-sky-800 text-xs font-mono font-bold shadow-2xs">
-                    ยอดคงที่: ฿{flatWaterCost.toLocaleString()} / เดือน
+                  <span className="px-3 py-1 rounded-lg bg-white border border-sky-200 text-sky-800 text-xs font-normal shadow-2xs">
+                    ยอดคงที่: {flatWaterCost.toLocaleString()} / เดือน
                   </span>
                   <span className="text-[11px] text-slate-400">
                     (เหมาจ่าย ไม่ใช้มิเตอร์)
@@ -387,7 +387,7 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
                                     <span>{title}:</span>
                                   </span>
-                                  <span className="font-mono font-bold text-slate-900">{valText}</span>
+                                  <span className="font-normal text-slate-800">{valText}</span>
                                 </div>
                               );
                             })}
@@ -479,8 +479,8 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                     <Building className="w-3.5 h-3.5 text-slate-400" />
                     <span>ค่าเช่าห้องพัก</span>
                   </span>
-                  <span className="font-mono font-medium text-slate-800">
-                    ฿{monthlyRent.toLocaleString()}
+                  <span className="font-normal text-slate-800">
+                    {monthlyRent.toLocaleString()}
                   </span>
                 </div>
               )}
@@ -490,8 +490,8 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                   <Zap className="w-3.5 h-3.5 text-amber-500" />
                   <span>ค่าไฟฟ้า ({electricity.unitsUsed} หน่วย)</span>
                 </span>
-                <span className="font-mono font-medium text-slate-800">
-                  ฿{electricity.currentCost.toLocaleString()}
+                <span className="font-normal text-slate-800">
+                  {electricity.currentCost.toLocaleString()}
                 </span>
               </div>
 
@@ -500,31 +500,31 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                   <Droplets className="w-3.5 h-3.5 text-sky-500" />
                   <span>ค่าน้ำประปา ({water.unitsUsed} ยูนิต)</span>
                 </span>
-                <span className="font-mono font-medium text-slate-800">
-                  ฿{water.currentCost.toLocaleString()}
+                <span className="font-normal text-slate-800">
+                  {water.currentCost.toLocaleString()}
                 </span>
               </div>
 
               {settings.rateConfig.mode === 'dorm_flat' && settings.rateConfig.electricityFixedFee > 0 && (
                 <div className="flex items-center justify-between text-slate-600">
                   <span>ค่าส่วนกลาง/บำรุงรักษา</span>
-                  <span className="font-mono font-medium text-slate-800">
-                    ฿{settings.rateConfig.electricityFixedFee.toLocaleString()}
+                  <span className="font-normal text-slate-800">
+                    {settings.rateConfig.electricityFixedFee.toLocaleString()}
                   </span>
                 </div>
               )}
 
               <div className="pt-2.5 border-t border-slate-200/80 space-y-1.5">
-                <div className="flex items-center justify-between font-bold text-slate-900">
-                  <span>ยอดใช้จริงสะสม ณ ปัจจุบัน</span>
-                  <span className="text-base font-extrabold text-emerald-700 font-mono">
-                    ฿{totalCurrent.toLocaleString()}
+                <div className="flex items-center justify-between text-slate-700">
+                  <span className="font-medium">ยอดใช้จริงสะสม ณ ปัจจุบัน</span>
+                  <span className="text-base font-normal text-emerald-700">
+                    {totalCurrent.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-100/80 px-2 py-1 rounded-lg">
                   <span>ประมาณการสิ้นเดือน (30 วัน)</span>
-                  <span className="font-mono font-semibold text-slate-700">
-                    ~฿{totalProjected.toLocaleString()}
+                  <span className="font-normal text-slate-700">
+                    ~{totalProjected.toLocaleString()}
                   </span>
                 </div>
               </div>
