@@ -93,10 +93,24 @@ export function calculateCycleSummary(
     }
 
     const latest = utilityReadings[utilityReadings.length - 1];
-    const startReading = baseline ? baseline.reading : (inCycleReadings[0]?.reading || latest.reading);
+    let startReading = baseline ? baseline.reading : (inCycleReadings[0]?.reading || latest.reading);
     const currentReading = latest.reading;
 
-    const unitsUsed = Math.max(0, Math.round((currentReading - startReading) * 10) / 10);
+    let unitsUsed = Math.max(0, Math.round((currentReading - startReading) * 10) / 10);
+
+    // If currentReading < startReading due to decimal/typo mismatch (e.g. 64812 vs 6560.6), find matching scale baseline or fallback to latest.unitsUsed
+    if (currentReading < startReading && utilityReadings.length > 1) {
+      const matchingBaseline = utilityReadings
+        .filter((r) => r.reading <= currentReading && r.id !== latest.id)
+        .pop();
+      if (matchingBaseline) {
+        startReading = matchingBaseline.reading;
+        unitsUsed = Math.max(0, Math.round((currentReading - startReading) * 10) / 10);
+      } else if (typeof latest.unitsUsed === 'number' && latest.unitsUsed > 0) {
+        unitsUsed = latest.unitsUsed;
+        startReading = Math.max(0, currentReading - unitsUsed);
+      }
+    }
     
     let currentCost = 0;
     let projectedCost = 0;
