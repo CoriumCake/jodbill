@@ -14,7 +14,6 @@ import {
 import confetti from 'canvas-confetti';
 import type { MeterType, MeterReading, UserSettings, OCRProvider } from '../types';
 import { 
-  performLocalOCR, 
   performGeminiVisionOCR, 
   getGeminiApiKey,
   extractPhotoDate, 
@@ -218,28 +217,16 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
     setOcrResultMessage(null);
 
     try {
-      let result;
       const geminiKey = getGeminiApiKey(settings.geminiApiKey);
-      if (geminiKey && geminiKey.trim().length > 10) {
-        result = await performGeminiVisionOCR(
-          dataUrl,
-          geminiKey,
-          (p, s) => {
-            setOcrProgress(p);
-            setOcrStatusText(s);
-          },
-          previousValue
-        );
-      } else {
-        result = await performLocalOCR(
-          dataUrl,
-          (p, s) => {
-            setOcrProgress(p);
-            setOcrStatusText(s);
-          },
-          previousValue
-        );
-      }
+      const result = await performGeminiVisionOCR(
+        dataUrl,
+        geminiKey || undefined,
+        (p, s) => {
+          setOcrProgress(p);
+          setOcrStatusText(s);
+        },
+        previousValue
+      );
 
       if (result.reading > 0) {
         setReadingInput(result.reading.toString());

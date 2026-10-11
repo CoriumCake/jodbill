@@ -370,8 +370,58 @@ export async function scanLiveCameraFrame(
   }
 }
 
+export async function compressImageForAPI(
+  dataUrl: string,
+  maxDimension = 1400,
+  quality = 0.85
+): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      if (width <= maxDimension && height <= maxDimension && dataUrl.length < 1024 * 1024) {
+        resolve(dataUrl);
+        return;
+      }
+
+      if (width > height) {
+        if (width > maxDimension) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        }
+      } else {
+        if (height > maxDimension) {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export function getGeminiApiKey(customKey?: string): string | null {
-  return import.meta.env.VITE_GEMINI_API_KEY?.trim() || customKey?.trim() || null;
+  return (
+    (import.meta.env as any).GEMINI_API_KEY?.trim() ||
+    import.meta.env.VITE_GEMINI_API_KEY?.trim() ||
+    customKey?.trim() ||
+    null
+  );
 }
 
 export async function performGeminiVisionOCR(
@@ -381,23 +431,54 @@ export async function performGeminiVisionOCR(
   previousReading?: number
 ): Promise<OCRResult> {
   try {
+    if (onProgress) onProgress(20, 'กำลังปรับแต่งรูปภาพ...');
+    const compressedImage = await compressImageForAPI(imageDataUrl);
+
+    // 1. Try secure Backend API route (/api/ocr) - keeps API key hidden on server
+    if (onProgress) onProgress(45, 'กำลังส่งภาพให้ Gemini AI วิเคราะห์...');
+    try {
+      const apiResponse = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageDataUrl: compressedImage,
+          previousReading,
+        }),
+      });
+
+      if (apiResponse.ok) {
+        const data = await apiResponse.json();
+        if (onProgress) onProgress(100, 'Gemini AI อ่านเลขมิเตอร์เสร็จสมบูรณ์!');
+        return {
+          reading: typeof data.reading === 'number' ? data.reading : parseFloat(data.reading) || 0,
+          confidence: data.confidence || 95,
+          rawText: data.rawText || '',
+          provider: 'gemini',
+          meterTypeHint: data.meterTypeHint || 'electricity',
+          message: data.message || `Gemini AI ตรวจพบมิเตอร์: ${data.reading}`,
+        };
+      } else {
+        const errorData = await apiResponse.json().catch(() => ({}));
+        console.warn('Backend /api/ocr responded with error:', errorData);
+      }
+    } catch (apiErr) {
+      console.warn('Could not reach backend /api/ocr endpoint:', apiErr);
+    }
+
+    // 2. Fallback to client-side direct Gemini call if custom key or VITE_GEMINI_API_KEY is available
     const effectiveKey = apiKey?.trim() || getGeminiApiKey();
-    if (!effectiveKey) {
-      throw new Error('ไม่พบ Gemini API Key ใน .env (VITE_GEMINI_API_KEY) หรือการตั้งค่า');
-    }
+    if (effectiveKey && effectiveKey.trim().length > 10) {
+      if (onProgress) onProgress(60, 'กำลังเชื่อมต่อ Gemini AI Direct...');
 
-    if (onProgress) onProgress(20, 'กำลังเชื่อมต่อ Gemini AI Vision...');
+      const mimeMatch = compressedImage.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+      if (!mimeMatch) {
+        throw new Error('รูปแบบภาพไม่ถูกต้อง');
+      }
+      const mimeType = mimeMatch[1];
+      const base64Data = mimeMatch[2];
 
-    const mimeMatch = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-    if (!mimeMatch) {
-      throw new Error('รูปแบบภาพไม่ถูกต้อง');
-    }
-    const mimeType = mimeMatch[1];
-    const base64Data = mimeMatch[2];
-
-    const prevHint = previousReading ? `Previous recorded reading was approx: ${previousReading}` : '';
-
-    const prompt = `You are an expert utility meter reader for Thai dorm electricity and water meters.
+      const prevHint = previousReading ? `Previous recorded reading was approx: ${previousReading}` : '';
+      const prompt = `You are an expert utility meter reader for Thai dorm electricity and water meters.
 Analyze this utility meter photo.
 ${prevHint}
 
@@ -415,38 +496,8 @@ Instructions:
   "notes": string
 }`;
 
-    if (onProgress) onProgress(50, 'Gemini กำลังอ่านตัวเลขหน้าปัดมิเตอร์...');
-
-    let response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${effectiveKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: base64Data,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            response_mime_type: 'application/json',
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveKey}`,
+      let response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${effectiveKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -471,27 +522,55 @@ Instructions:
           }),
         }
       );
+
+      if (!response.ok) {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${effectiveKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { text: prompt },
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: base64Data,
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                response_mime_type: 'application/json',
+              },
+            }),
+          }
+        );
+      }
+
+      if (response.ok) {
+        const data = await response.json();
+        const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        const parsedData = JSON.parse(candidateText);
+
+        if (onProgress) onProgress(100, 'Gemini AI อ่านเลขมิเตอร์เสร็จสมบูรณ์!');
+
+        return {
+          reading: typeof parsedData.reading === 'number' ? parsedData.reading : parseFloat(parsedData.reading) || 0,
+          confidence: parsedData.confidence || 95,
+          rawText: candidateText,
+          provider: 'gemini',
+          meterTypeHint: parsedData.meter_type === 'water' ? 'water' : 'electricity',
+          message: `Gemini AI ตรวจพบมิเตอร์${parsedData.meter_type === 'water' ? 'น้ำ' : 'ไฟ'}: ${parsedData.reading} (${parsedData.digits_detail || ''})`,
+        };
+      }
     }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini API Error: ${response.status} - ${errText}`);
-    }
-
-    const data = await response.json();
-    const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    const parsedData = JSON.parse(candidateText);
-
-    if (onProgress) onProgress(100, 'Gemini AI อ่านเลขมิเตอร์เสร็จสมบูรณ์!');
-
-    return {
-      reading: typeof parsedData.reading === 'number' ? parsedData.reading : parseFloat(parsedData.reading) || 0,
-      confidence: parsedData.confidence || 95,
-      rawText: candidateText,
-      provider: 'gemini',
-      meterTypeHint: parsedData.meter_type === 'water' ? 'water' : 'electricity',
-      message: `Gemini AI ตรวจพบมิเตอร์${parsedData.meter_type === 'water' ? 'น้ำ' : 'ไฟ'}: ${parsedData.reading} (${parsedData.digits_detail || ''})`,
-    };
+    throw new Error('ไม่สามารถเชื่อมต่อ Gemini API (หรือยังไม่ได้ตั้งค่า GEMINI_API_KEY)');
   } catch (error: any) {
     console.warn('Gemini OCR failed, falling back to local Tesseract:', error);
     if (onProgress) onProgress(40, 'สลับไปใช้ OCR ในเครื่องแทน...');
