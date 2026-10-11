@@ -42,6 +42,33 @@ export function App() {
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'simulator'>('dashboard');
 
+  // Theme state ('light' | 'dark')
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('jodbill_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('jodbill_theme', theme);
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      showToast(next === 'dark' ? '🌙 เปลี่ยนเป็นโหมดมืด (Dark Mode)' : '☀️ เปลี่ยนเป็นโหมดสว่าง (Light Mode)');
+      return next;
+    });
+  };
+
   // Cloud Auth & Sync state
   const [user, setUser] = useState<AuthUser | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unauthenticated');
@@ -498,6 +525,8 @@ export function App() {
           currentRole={currentRole}
           user={user}
           syncStatus={syncStatus}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
           onOpenRecordModal={openRecordModal}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenShare={() => setIsShareModalOpen(true)}

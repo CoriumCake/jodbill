@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: 'Prompt', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -11,10 +13,15 @@
     color-scheme: light;
   }
   
+  html.dark {
+    color-scheme: dark;
+  }
+  
   body {
     background-color: #f8fafc;
     color: #1e293b;
     min-height: 100vh;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
   /* Remove spinner arrows from number inputs */
@@ -150,3 +157,154 @@
 .driver-popover-close-btn:hover {
   background-color: #334155 !important;
 }
+
+/* ================= Modern Sleek Dark Mode System ================= */
+html.dark body {
+  background-color: #0b0f19 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Background overrides in dark mode */
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/60,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/80,
+html.dark .bg-\[\#f8f9fa\]\/95 {
+  background-color: #0b0f19 !important;
+}
+
+html.dark .bg-white {
+  background-color: #111827 !important;
+}
+
+html.dark aside {
+  background-color: #0d1322 !important;
+  border-color: #1e293b !important;
+}
+
+html.dark header {
+  background-color: rgba(13, 19, 34, 0.95) !important;
+  border-color: #1e293b !important;
+}
+
+/* Borders in dark mode */
+html.dark .border-slate-200,
+html.dark .border-slate-200\/60,
+html.dark .border-slate-200\/70,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-200\/90,
+html.dark .border-slate-100 {
+  border-color: #1e293b !important;
+}
+
+/* Text Hierarchy in dark mode */
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+/* Accents in dark mode */
+html.dark .text-emerald-700 {
+  color: #34d399 !important;
+}
+
+/* Sub-containers & cards in dark mode */
+html.dark .clean-card {
+  background-color: #111827 !important;
+  border-color: #1e293b !important;
+}
+
+html.dark .clean-card-hover:hover {
+  border-color: #334155 !important;
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
+html.dark .bg-slate-100,
+html.dark .bg-slate-100\/80,
+html.dark .bg-slate-100\/60 {
+  background-color: #162032 !important;
+}
+
+/* Sidebar active navigation button in dark mode */
+html.dark .bg-amber-100\/70 {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  color: #fde68a !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+html.dark .bg-amber-100\/70 span {
+  color: #fde68a !important;
+}
+html.dark .bg-amber-100\/70 svg {
+  color: #f59e0b !important;
+}
+
+/* Dark mode buttons */
+html.dark .bg-slate-900 {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+}
+html.dark .bg-slate-900:hover {
+  background-color: #334155 !important;
+}
+
+/* Clean Meter Digits in dark mode */
+html.dark .meter-odometer {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+/* Inputs in dark mode */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: #162032 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+html.dark input::placeholder {
+  color: #64748b !important;
+}
+
+/* Mobile Bottom Navigation */
+html.dark nav.fixed {
+  background-color: rgba(13, 19, 34, 0.95) !important;
+  border-color: #1e293b !important;
+}
+
+/* Custom Scrollbars in dark mode */
+html.dark ::-webkit-scrollbar-track {
+  background: #0d1322 !important;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155 !important;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569 !important;
+}
+
+/* Driver popover in dark mode */
+html.dark .driver-popover {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+html.dark .driver-popover-title {
+  color: #f8fafc !important;
+}
+html.dark .driver-popover-description {
+  color: #cbd5e1 !important;
+}
+

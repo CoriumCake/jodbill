@@ -9,7 +9,9 @@ import {
   HelpCircle, 
   CheckCircle2,
   Smartphone,
-  Sprout
+  Sprout,
+  Sun,
+  Moon
 } from 'lucide-react';
 import type { UserSettings, UserRole, AuthUser, SyncStatus } from '../types';
 import { usePWAInstall } from '../utils/usePWAInstall';
@@ -21,6 +23,8 @@ interface HeaderProps {
   currentRole: UserRole;
   user: AuthUser | null;
   syncStatus: SyncStatus;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
   onOpenRecordModal: (type?: 'electricity' | 'water') => void;
   onOpenSettings: () => void;
   onOpenShare: () => void;
@@ -35,6 +39,8 @@ export const Header: React.FC<HeaderProps> = ({
   settings,
   user,
   syncStatus: _syncStatus,
+  theme,
+  onToggleTheme,
   onOpenSettings,
   onOpenShare,
   onExportCSV,
@@ -110,7 +116,22 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* 2. Authentication Button: Shown on mobile only (desktop already has user profile & logout in sidebar) */}
+          {/* 2. Dark Mode Toggle Button (Replaces redundant profile button) */}
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={theme === 'dark' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด'}
+            title={theme === 'dark' ? 'เปลี่ยนเป็นโหมดสว่าง (Light Mode)' : 'เปลี่ยนเป็นโหมดมืด (Dark Mode)'}
+            className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 shadow-2xs transition-all cursor-pointer active:scale-95 group"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-600 group-hover:-rotate-12 transition-transform" />
+            )}
+          </button>
+
+          {/* 3. Authentication Button: Shown on mobile only (desktop already has user profile & logout in sidebar) */}
           <div className="md:hidden">
             {user ? (
               /* Logged In: Avatar Button with Dropdown */
