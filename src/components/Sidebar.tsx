@@ -8,9 +8,11 @@ import {
   LogOut,
   LogIn,
   Sprout,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Smartphone
 } from 'lucide-react';
 import type { UserSettings, UserRole, AuthUser, SyncStatus } from '../types';
+import { usePWAInstall } from '../utils/usePWAInstall';
 
 interface SidebarProps {
   activeTab: 'dashboard' | 'history' | 'simulator';
@@ -53,6 +55,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     : user?.email
     ? user.email.slice(0, 2).toUpperCase()
     : 'MP';
+
+  const { isInstallable, installApp } = usePWAInstall();
 
   return (
     <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200/70 shrink-0 select-none h-screen sticky top-0 font-sans">
@@ -149,6 +153,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
       </div>
+
+      {/* PWA Install Button if available */}
+      {isInstallable && (
+        <div className="px-4 pb-2">
+          <button
+            type="button"
+            onClick={() => installApp()}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+            <span>ติดตั้งแอปบนเครื่อง</span>
+          </button>
+        </div>
+      )}
 
       {/* User Profile Card at Bottom */}
       <div className="p-4 border-t border-slate-100 bg-white">

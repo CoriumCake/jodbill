@@ -1,17 +1,59 @@
 {
-  "name": "jodbill - จดบิลค่าน้ำค่าไฟ",
-  "short_name": "jodbill",
-  "description": "ระบบบันทึกและคำนวณค่าน้ำค่าไฟอัจฉริยะแบบ Real-Time พร้อม AI OCR",
+  "name": "JodBill - จดบิลค่าน้ำค่าไฟ",
+  "short_name": "JodBill",
+  "description": "ระบบบันทึกและคำนวณค่าน้ำค่าไฟอัจฉริยะแบบ Real-Time พร้อม AI OCR สแกนมิเตอร์",
   "start_url": "/",
+  "scope": "/",
+  "id": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "categories": ["utilities", "productivity", "finance"],
   "icons": [
     {
-      "src": "/favicon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "จดมิเตอร์ไฟฟ้า",
+      "short_name": "จดไฟ",
+      "description": "ถ่ายรูปสแกนมิเตอร์ไฟฟ้า",
+      "url": "/?action=record-elec",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "จดมิเตอร์น้ำประปา",
+      "short_name": "จดน้ำ",
+      "description": "ถ่ายรูปสแกนมิเตอร์น้ำ",
+      "url": "/?action=record-water",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

@@ -463,6 +463,11 @@ export function App() {
           onExportCSV={handleExportCSV}
           onStartTour={handleStartTour}
           onOpenAuth={handleOpenAuth}
+          onLogout={async () => {
+            await logoutUser();
+            setUser(null);
+            showToast('ออกจากระบบสำเร็จ');
+          }}
         />
 
         {/* Dynamic Page Views */}
