@@ -10,10 +10,17 @@ import {
   syncReadingsToSupabase,
   syncSettingsToSupabase,
   fetchReadingsFromSupabase,
-  fetchSettingsFromSupabase
+  fetchSettingsFromSupabase,
+  subscribeToUserAndRoomRealtime,
+  subscribeToRoomRealtime
 } from './supabase';
 
-export { signInWithEmailSupabase, signUpWithEmailSupabase };
+export { 
+  signInWithEmailSupabase, 
+  signUpWithEmailSupabase,
+  subscribeToUserAndRoomRealtime,
+  subscribeToRoomRealtime
+};
 
 const CURRENT_USER_STORAGE_KEY = 'jodbill_active_auth_user';
 
@@ -185,15 +192,14 @@ export async function pushUserDataToCloud(
 
 // Cloud Sync: Pull state from Supabase Cloud
 export async function fetchUserDataFromCloud(
-  uid: string
+  uid: string,
+  preferredRoomId?: string
 ): Promise<{ readings?: MeterReading[]; settings?: Partial<UserSettings>; updatedAt?: string } | null> {
   // 1. Supabase Postgres Fetch (Primary)
   if (isSupabaseConfigured && supabase) {
-    const roomId = 'default-room';
-    const [readings, settings] = await Promise.all([
-      fetchReadingsFromSupabase(uid, roomId),
-      fetchSettingsFromSupabase(uid, roomId),
-    ]);
+    const settings = await fetchSettingsFromSupabase(uid, preferredRoomId);
+    const activeRoomId = settings?.roomShare?.roomId || preferredRoomId;
+    const readings = await fetchReadingsFromSupabase(uid, activeRoomId);
 
     if (!readings && !settings) return null;
     return {

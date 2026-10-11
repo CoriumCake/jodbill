@@ -23,7 +23,7 @@ import {
   fetchUserDataFromCloud,
   logoutUser 
 } from './utils/authService';
-import { subscribeToRoomRealtime } from './utils/supabase';
+import { subscribeToUserAndRoomRealtime, supabase } from './utils/supabase';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
@@ -117,19 +117,27 @@ export function App() {
           window.history.replaceState(null, '', window.location.pathname);
         }
         setSyncStatus('syncing');
-        fetchUserDataFromCloud(currentUser.uid).then((cloudData) => {
+        fetchUserDataFromCloud(currentUser.uid, settingsRef.current.roomShare?.roomId).then((cloudData) => {
           if (cloudData) {
+            let nextReadings = readingsRef.current;
+            let nextSettings = settingsRef.current;
+
             if (cloudData.readings && cloudData.readings.length > 0) {
+              nextReadings = cloudData.readings;
               setReadings(cloudData.readings);
               saveReadings(cloudData.readings);
             }
             if (cloudData.settings) {
-              setSettings((prev) => {
-                const merged = { ...prev, ...cloudData.settings };
-                saveSettings(merged);
-                return merged;
-              });
+              nextSettings = { ...settingsRef.current, ...cloudData.settings };
+              setSettings(nextSettings);
+              saveSettings(nextSettings);
             }
+
+            lastPushedHashRef.current = JSON.stringify({
+              readings: nextReadings,
+              settings: nextSettings,
+            });
+
             showToast(`☁️ ดึงข้อมูลคลาวด์ของ ${currentUser.displayName || 'Google'} สำเร็จ`);
           }
           setSyncStatus('synced');
@@ -145,11 +153,12 @@ export function App() {
     return () => unsubscribe();
   }, [showToast]);
 
-  // Real-time Supabase listener (auto syncs when roommates record a meter on their device)
+  // Real-time Supabase listener (auto syncs when user records on phone or roommates record)
+  const activeRoomId = settings.roomShare?.roomId || 'default-room';
   useEffect(() => {
     if (!user) return;
-    const unsubRealtime = subscribeToRoomRealtime('default-room', () => {
-      fetchUserDataFromCloud(user.uid).then((cloudData) => {
+    const unsubRealtime = subscribeToUserAndRoomRealtime(user.uid, activeRoomId, () => {
+      fetchUserDataFromCloud(user.uid, activeRoomId).then((cloudData) => {
         if (!cloudData) return;
 
         let hasNewData = false;
@@ -181,13 +190,17 @@ export function App() {
 
         // Only show toast if real new data arrived from outside
         if (hasNewData) {
-          showToast('⚡ ได้รับข้อมูลมิเตอร์อัปเดตแบบ Real-time');
+          lastPushedHashRef.current = JSON.stringify({
+            readings: cloudData.readings || readingsRef.current,
+            settings: cloudData.settings ? { ...settingsRef.current, ...cloudData.settings } : settingsRef.current,
+          });
+          showToast('⚡ ได้รับข้อมูลมิเตอร์อัปเดตจากอุปกรณ์อื่นแบบ Real-time');
         }
       });
     });
 
     return () => unsubRealtime();
-  }, [user, showToast]);
+  }, [user, activeRoomId, showToast]);
 
   // Async IndexedDB hydration (guarantees no data loss even after heavy sessions)
   useEffect(() => {
@@ -271,6 +284,19 @@ export function App() {
     setReadings(nextReadings);
     saveReadings(nextReadings);
     showToast(`บันทึกมิเตอร์${newReading.meterType === 'electricity' ? 'ไฟฟ้า' : 'น้ำประปา'}แล้ว`);
+
+    if (user) {
+      setSyncStatus('syncing');
+      pushUserDataToCloud(user.uid, { readings: nextReadings, settings })
+        .then((ok) => {
+          if (ok) {
+            lastPushedHashRef.current = JSON.stringify({ readings: nextReadings, settings });
+            setSyncStatus('synced');
+            setLastSyncedAt(new Date());
+          }
+        })
+        .catch(() => setSyncStatus('error'));
+    }
   };
 
   const handleDeleteReading = (id: string) => {
@@ -282,6 +308,13 @@ export function App() {
     setReadings(nextReadings);
     saveReadings(nextReadings);
     showToast('ลบรายการบันทึกแล้ว');
+
+    if (user && supabase) {
+      supabase.from('readings').delete().eq('id', id).then(() => {
+        lastPushedHashRef.current = JSON.stringify({ readings: nextReadings, settings });
+        setSyncStatus('synced');
+      });
+    }
   };
 
   const handleExportCSV = () => {
@@ -357,19 +390,28 @@ export function App() {
   const handlePullCloudData = async () => {
     if (!user) return;
     setSyncStatus('syncing');
-    const cloudData = await fetchUserDataFromCloud(user.uid);
+    const cloudData = await fetchUserDataFromCloud(user.uid, settings.roomShare?.roomId);
     if (cloudData) {
+      let nextReadings = readings;
+      let nextSettings = settings;
+
       if (cloudData.readings && cloudData.readings.length > 0) {
+        nextReadings = cloudData.readings;
         setReadings(cloudData.readings);
         saveReadings(cloudData.readings);
       }
       if (cloudData.settings) {
-        const merged = { ...settings, ...cloudData.settings };
-        setSettings(merged);
-        saveSettings(merged);
+        nextSettings = { ...settings, ...cloudData.settings };
+        setSettings(nextSettings);
+        saveSettings(nextSettings);
       }
+      lastPushedHashRef.current = JSON.stringify({
+        readings: nextReadings,
+        settings: nextSettings,
+      });
       setSyncStatus('synced');
       setLastSyncedAt(new Date());
+      showToast('☁️ ดึงข้อมูลล่าสุดจากคลาวด์สำเร็จ');
     } else {
       setSyncStatus('synced');
     }

@@ -149,6 +149,16 @@ export async function syncReadingsToSupabase(
   try {
     if (readings.length === 0) return true;
 
+    // Ensure the room exists first to satisfy foreign key constraint
+    await supabase.from('rooms').upsert(
+      {
+        id: roomId,
+        owner_id: userId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+
     const payload = readings.map((r) => ({
       id: r.id,
       user_id: userId,
@@ -182,17 +192,23 @@ export async function syncReadingsToSupabase(
 
 // 6. Cloud Database Fetch: Readings
 export async function fetchReadingsFromSupabase(
-  _userId: string,
-  roomId = 'default-room'
+  userId?: string,
+  roomId?: string
 ): Promise<MeterReading[] | null> {
   if (!supabase) return null;
 
   try {
-    const { data, error } = await supabase
-      .from('readings')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('timestamp', { ascending: false });
+    let query = supabase.from('readings').select('*');
+
+    if (userId && roomId && roomId !== 'default-room') {
+      query = query.or(`user_id.eq.${userId},room_id.eq.${roomId}`);
+    } else if (userId) {
+      query = query.eq('user_id', userId);
+    } else if (roomId) {
+      query = query.eq('room_id', roomId);
+    }
+
+    const { data, error } = await query.order('timestamp', { ascending: false });
 
     if (error || !data) {
       console.warn('Supabase fetch readings warning:', error);
@@ -251,47 +267,83 @@ export async function syncSettingsToSupabase(
 
 // 8. Cloud Database Fetch: Room Settings
 export async function fetchSettingsFromSupabase(
-  _userId: string,
-  roomId = 'default-room'
+  userId?: string,
+  roomId?: string
 ): Promise<Partial<UserSettings> | null> {
   if (!supabase) return null;
 
   try {
-    const { data, error } = await supabase
+    // 1. Try provided roomId first if specific
+    if (roomId && roomId !== 'default-room') {
+      const { data } = await supabase
+        .from('rooms')
+        .select('settings, dorm_name, room_number')
+        .eq('id', roomId)
+        .maybeSingle();
+
+      if (data?.settings) {
+        return data.settings as Partial<UserSettings>;
+      }
+    }
+
+    // 2. Fetch the latest room owned by this user
+    if (userId) {
+      const { data } = await supabase
+        .from('rooms')
+        .select('settings, dorm_name, room_number')
+        .eq('owner_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.settings) {
+        return data.settings as Partial<UserSettings>;
+      }
+    }
+
+    // 3. Fallback to default-room
+    const { data } = await supabase
       .from('rooms')
       .select('settings, dorm_name, room_number')
-      .eq('id', roomId)
-      .single();
+      .eq('id', 'default-room')
+      .maybeSingle();
 
-    if (error || !data) return null;
-    return (data.settings as Partial<UserSettings>) || null;
+    return (data?.settings as Partial<UserSettings>) || null;
   } catch (err) {
     console.error('Supabase fetch settings failed:', err);
     return null;
   }
 }
 
-// 9. Real-time Subscription for Roommates
-export function subscribeToRoomRealtime(
+// 9. Real-time Subscription for User and Room Across Devices
+export function subscribeToUserAndRoomRealtime(
+  userId: string,
   roomId: string,
   onUpdate: () => void
 ): () => void {
   if (!supabase) return () => {};
 
+  const channelId = `sync_${userId || 'anon'}_${roomId || 'default'}_${Math.random().toString(36).substring(2, 7)}`;
   const channel = supabase
-    .channel(`room_${roomId}`)
+    .channel(channelId)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'readings', filter: `room_id=eq.${roomId}` },
-      () => {
-        onUpdate();
+      { event: '*', schema: 'public', table: 'readings' },
+      (payload) => {
+        const record = (payload.new || payload.old) as any;
+        if (!record || !userId || record.user_id === userId || record.room_id === roomId) {
+          onUpdate();
+        }
       }
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
-      () => {
-        onUpdate();
+      { event: '*', schema: 'public', table: 'rooms' },
+      (payload) => {
+        const record = (payload.new || payload.old) as any;
+        if (!record || !userId || record.owner_id === userId || record.id === roomId) {
+          onUpdate();
+        }
       }
     )
     .subscribe();
@@ -299,4 +351,12 @@ export function subscribeToRoomRealtime(
   return () => {
     supabase.removeChannel(channel);
   };
+}
+
+// Legacy Real-time Subscription
+export function subscribeToRoomRealtime(
+  roomId: string,
+  onUpdate: () => void
+): () => void {
+  return subscribeToUserAndRoomRealtime('', roomId, onUpdate);
 }
