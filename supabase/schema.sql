@@ -1,6 +1,8 @@
 -- ==============================================================================
 -- jodbill (จดบิล) - Supabase Database Schema & Row Level Security (RLS)
 -- Copy and paste this script into your Supabase Dashboard > SQL Editor > Run
+-- Then run supabase/migrations/20261016000000_room_access_control.sql, which
+-- replaces the open policies below with owner/admin room access control.
 -- ==============================================================================
 
 -- 1. Create Rooms Table

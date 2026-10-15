@@ -24,7 +24,7 @@ interface HistoryTableProps {
 
 export const HistoryTable: React.FC<HistoryTableProps> = ({
   readings,
-  currentRole = 'owner',
+  currentRole: _currentRole,
   onDeleteReading,
   onOpenRecord,
   onExportCSV,
@@ -243,21 +243,17 @@ export const HistoryTable: React.FC<HistoryTableProps> = ({
                     </td>
 
                     <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                      {currentRole !== 'viewer' ? (
-                        <button
-                          onClick={() => {
-                            if (confirm('ยืนยันลบรายการบันทึกนี้หรือไม่?')) {
-                              onDeleteReading(reading.id);
-                            }
-                          }}
-                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
-                          title="ลบรายการ"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <span className="text-slate-300 text-xs">—</span>
-                      )}
+                      <button
+                        onClick={() => {
+                          if (confirm('ยืนยันลบรายการบันทึกนี้หรือไม่?')) {
+                            onDeleteReading(reading.id);
+                          }
+                        }}
+                        className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
+                        title="ลบรายการ"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 );

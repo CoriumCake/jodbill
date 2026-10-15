@@ -56,25 +56,32 @@ export interface GovernmentRateConfig {
 
 export type RateConfig = DormFlatRateConfig | GovernmentRateConfig;
 
-export type UserRole = 'owner' | 'editor' | 'viewer';
+// 'owner' created the room and manages admins; 'admin' has full access to the room's data
+export type RoomRole = 'owner' | 'admin';
+export type UserRole = RoomRole;
 
-export interface RoomShareConfig {
-  roomId: string;
-  editorPin: string;
-  viewerPin: string;
-  roomName: string;
-  createdAt: string;
-  remoteSyncUrl?: string;
+export interface RoomSummary {
+  id: string;
+  dormName: string;
+  roomNumber: string;
+  role: RoomRole;
 }
 
-export interface SharePayload {
-  version: number;
-  roomId: string;
-  role: UserRole;
-  settings: Partial<UserSettings>;
-  readings: MeterReading[];
-  exportedAt: string;
-  editorPin?: string;
+export interface RoomMember {
+  userId: string;
+  role: RoomRole;
+  email: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  joinedAt: string;
+}
+
+export interface RoomInvite {
+  id: string;
+  email: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string;
 }
 
 export interface UserSettings {
@@ -89,8 +96,6 @@ export interface UserSettings {
   preferredOcrProvider: OCRProvider;
   soundEnabled: boolean;
   theme: 'dark' | 'light' | 'cyber';
-  currentRole?: UserRole;           // 'owner' (default) | 'editor' | 'viewer'
-  roomShare?: RoomShareConfig;
 }
 
 export interface CycleSummary {

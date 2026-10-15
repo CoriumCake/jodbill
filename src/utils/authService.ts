@@ -1,4 +1,4 @@
-import type { AuthUser, MeterReading, UserSettings } from '../types';
+import type { AuthUser } from '../types';
 import { 
   supabase, 
   isSupabaseConfigured, 
@@ -7,19 +7,11 @@ import {
   signUpWithEmailSupabase,
   signOutSupabase, 
   subscribeToSupabaseAuth,
-  syncReadingsToSupabase,
-  syncSettingsToSupabase,
-  fetchReadingsFromSupabase,
-  fetchSettingsFromSupabase,
-  subscribeToUserAndRoomRealtime,
-  subscribeToRoomRealtime
 } from './supabase';
 
 export { 
   signInWithEmailSupabase, 
   signUpWithEmailSupabase,
-  subscribeToUserAndRoomRealtime,
-  subscribeToRoomRealtime
 };
 
 const CURRENT_USER_STORAGE_KEY = 'jodbill_active_auth_user';
@@ -165,59 +157,4 @@ export async function logoutUser(): Promise<void> {
     await signOutSupabase();
   }
   localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
-}
-
-// Cloud Sync: Push state to Supabase Cloud
-export async function pushUserDataToCloud(
-  uid: string,
-  data: { readings: MeterReading[]; settings: UserSettings }
-): Promise<boolean> {
-  // 1. Supabase Postgres Sync (Primary)
-  if (isSupabaseConfigured && supabase) {
-    const roomId = data.settings.roomShare?.roomId || 'default-room';
-    const okReadings = await syncReadingsToSupabase(uid, data.readings, roomId);
-    const okSettings = await syncSettingsToSupabase(uid, data.settings, roomId);
-    return okReadings && okSettings;
-  }
-
-  // 2. Fallback local cloud simulator
-  const mockCloudKey = `jodbill_cloud_db_${uid}`;
-  localStorage.setItem(mockCloudKey, JSON.stringify({
-    settings: data.settings,
-    readings: data.readings,
-    updatedAt: new Date().toISOString(),
-  }));
-  return true;
-}
-
-// Cloud Sync: Pull state from Supabase Cloud
-export async function fetchUserDataFromCloud(
-  uid: string,
-  preferredRoomId?: string
-): Promise<{ readings?: MeterReading[]; settings?: Partial<UserSettings>; updatedAt?: string } | null> {
-  // 1. Supabase Postgres Fetch (Primary)
-  if (isSupabaseConfigured && supabase) {
-    const settings = await fetchSettingsFromSupabase(uid, preferredRoomId);
-    const activeRoomId = settings?.roomShare?.roomId || preferredRoomId;
-    const readings = await fetchReadingsFromSupabase(uid, activeRoomId);
-
-    if (!readings && !settings) return null;
-    return {
-      readings: readings || undefined,
-      settings: settings || undefined,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  // 2. Fallback local cloud simulator
-  const mockCloudKey = `jodbill_cloud_db_${uid}`;
-  const raw = localStorage.getItem(mockCloudKey);
-  if (raw) {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }

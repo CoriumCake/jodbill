@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Eye, Sparkles } from 'lucide-react';
-import type { MeterReading, UserSettings, MeterType, UserRole, AuthUser, SyncStatus } from './types';
+import { Sparkles } from 'lucide-react';
+import type { MeterReading, UserSettings, MeterType, UserRole, AuthUser, SyncStatus, RoomSummary } from './types';
 import { 
   loadReadings, 
   loadReadingsAsync,
@@ -15,15 +15,28 @@ import {
 } from './utils/storage';
 import { calculateCycleSummary } from './utils/projection';
 import { startProductTour } from './utils/tour';
-import { checkUrlForShare, clearShareUrlParams } from './utils/shareService';
 import { preloadOCRWorker } from './utils/ocrService';
-import { 
-  subscribeToAuth, 
-  pushUserDataToCloud, 
-  fetchUserDataFromCloud,
-  logoutUser 
-} from './utils/authService';
-import { subscribeToUserAndRoomRealtime, supabase } from './utils/supabase';
+import { subscribeToAuth, logoutUser } from './utils/authService';
+import {
+  listMyRooms,
+  createRoom,
+  fetchRoomReadings,
+  fetchRoomSettings,
+  saveRoomSettings,
+  syncRoomReadings,
+  subscribeToRoom,
+  subscribeToMyMemberships,
+  acceptInvite,
+  claimMyInvites,
+  describeInviteError,
+  captureInviteTokenFromUrl,
+  clearPendingInviteToken,
+  getStoredActiveRoomId,
+  storeActiveRoomId,
+  mergeRoomSettings,
+  readingFingerprint,
+  sharedSettingsKey,
+} from './utils/roomService';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
@@ -36,6 +49,24 @@ import { BillSlipModal } from './components/BillSlipModal';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
 import { LoginPage } from './components/LoginPage';
+
+// Re-applies local, not-yet-pushed edits on top of fresh server readings
+const readingsKey = (list: MeterReading[]) => list.map(readingFingerprint).join('\n');
+
+function rebaseReadings(local: MeterReading[], synced: MeterReading[], remote: MeterReading[]): MeterReading[] {
+  const syncedById = new Map(synced.map((r) => [r.id, readingFingerprint(r)]));
+  const localById = new Map(local.map((r) => [r.id, r]));
+
+  const added = local.filter((r) => !syncedById.has(r.id));
+  const merged = remote
+    .filter((r) => !(syncedById.has(r.id) && !localById.has(r.id)))
+    .map((r) => {
+      const mine = localById.get(r.id);
+      return mine && readingFingerprint(mine) !== syncedById.get(r.id) ? mine : r;
+    });
+  const remoteIds = new Set(merged.map((r) => r.id));
+  return [...added.filter((r) => !remoteIds.has(r.id)), ...merged];
+}
 
 export function App() {
   const [readings, setReadings] = useState<MeterReading[]>(() => loadReadings());
@@ -71,13 +102,19 @@ export function App() {
 
   // Cloud Auth & Sync state
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [authResolved, setAuthResolved] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('unauthenticated');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'app' | 'login'>('app');
+  const userId = user?.uid ?? null;
 
-  // Role permissions: 'owner' | 'editor' | 'viewer'
-  const currentRole: UserRole = settings.currentRole || 'owner';
+  // Rooms the user owns or administers
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
+  const [hasPendingInvite] = useState(() => Boolean(captureInviteTokenFromUrl()));
+  const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
+  const currentRole: UserRole = activeRoom?.role ?? 'owner';
 
   // Modal states
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
@@ -87,9 +124,10 @@ export function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Safety refs to break Realtime feedback loop
-  const isRemoteSyncingRef = useRef(false);
-  const lastPushedHashRef = useRef('');
+  // Last known server state of the loaded room; local state is diffed against it before pushing
+  const loadedRoomIdRef = useRef<string | null>(null);
+  const syncedReadingsRef = useRef<MeterReading[]>([]);
+  const syncedSettingsJsonRef = useRef('');
   const readingsRef = useRef(readings);
   readingsRef.current = readings;
   const settingsRef = useRef(settings);
@@ -100,138 +138,224 @@ export function App() {
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
-  // Sync state to LocalStorage & IndexedDB on changes + Cloud Database (Debounced & Loop-Protected)
+  const applyRemoteRoom = useCallback(
+    (roomId: string, remoteReadings: MeterReading[], remoteSettings: Partial<UserSettings> | null) => {
+      const isSameRoom = loadedRoomIdRef.current === roomId;
+      const nextReadings = isSameRoom
+        ? rebaseReadings(readingsRef.current, syncedReadingsRef.current, remoteReadings)
+        : remoteReadings;
+
+      const remoteMerged = mergeRoomSettings(settingsRef.current, remoteSettings);
+      const hasLocalSettingsEdits =
+        isSameRoom && sharedSettingsKey(settingsRef.current) !== syncedSettingsJsonRef.current;
+      const nextSettings = hasLocalSettingsEdits ? settingsRef.current : remoteMerged;
+
+      syncedReadingsRef.current = remoteReadings;
+      syncedSettingsJsonRef.current = sharedSettingsKey(remoteMerged);
+      loadedRoomIdRef.current = roomId;
+      setReadings(nextReadings);
+      setSettings(nextSettings);
+    },
+    []
+  );
+
+  const pushRoomChanges = useCallback(async (roomId: string, nextReadings: MeterReading[], nextSettings: UserSettings) => {
+    const sharedJson = sharedSettingsKey(nextSettings);
+    if (nextReadings !== syncedReadingsRef.current) {
+      await syncRoomReadings(roomId, nextReadings, syncedReadingsRef.current);
+      syncedReadingsRef.current = nextReadings;
+    }
+    if (sharedJson !== syncedSettingsJsonRef.current) {
+      await saveRoomSettings(roomId, nextSettings);
+      syncedSettingsJsonRef.current = sharedJson;
+    }
+  }, []);
+
+  // Persist locally on every change, then push the diff to the active room (debounced)
   useEffect(() => {
     saveReadings(readings);
     saveSettings(settings);
 
-    if (!user) return;
+    const roomId = loadedRoomIdRef.current;
+    if (!userId || !roomId) return;
 
-    // If this update was triggered by remote sync, do NOT push it back to the cloud
-    if (isRemoteSyncingRef.current) {
-      isRemoteSyncingRef.current = false;
-      return;
-    }
-
-    const currentHash = JSON.stringify({ readings, settings });
-    if (currentHash === lastPushedHashRef.current) {
-      return;
-    }
+    const readingsChanged = readings !== syncedReadingsRef.current;
+    const settingsChanged = sharedSettingsKey(settings) !== syncedSettingsJsonRef.current;
+    if (!readingsChanged && !settingsChanged) return;
 
     const timer = setTimeout(() => {
+      if (loadedRoomIdRef.current !== roomId) return;
       setSyncStatus('syncing');
-      pushUserDataToCloud(user.uid, { readings, settings })
-        .then((ok) => {
-          if (ok) {
-            lastPushedHashRef.current = currentHash;
-            setSyncStatus('synced');
-            setLastSyncedAt(new Date());
-          }
+      pushRoomChanges(roomId, readings, settings)
+        .then(() => {
+          setSyncStatus('synced');
+          setLastSyncedAt(new Date());
         })
         .catch(() => setSyncStatus('error'));
-    }, 1000);
+    }, 600);
 
     return () => clearTimeout(timer);
-  }, [readings, user, settings]);
+  }, [readings, settings, userId, pushRoomChanges]);
 
-  // Handle Cloud Sync on User Authentication Change
+  // Track auth state
   useEffect(() => {
     const unsubscribe = subscribeToAuth((currentUser) => {
       setUser(currentUser);
+      setAuthResolved(true);
       if (currentUser) {
         setCurrentView('app');
         if (window.location.hash.includes('access_token')) {
           window.history.replaceState(null, '', window.location.pathname);
         }
-        setSyncStatus('syncing');
-        fetchUserDataFromCloud(currentUser.uid, settingsRef.current.roomShare?.roomId).then((cloudData) => {
-          if (cloudData) {
-            let nextReadings = readingsRef.current;
-            let nextSettings = settingsRef.current;
-
-            if (cloudData.readings && cloudData.readings.length > 0) {
-              nextReadings = cloudData.readings;
-              setReadings(cloudData.readings);
-              saveReadings(cloudData.readings);
-            }
-            if (cloudData.settings) {
-              nextSettings = { ...settingsRef.current, ...cloudData.settings };
-              setSettings(nextSettings);
-              saveSettings(nextSettings);
-            }
-
-            lastPushedHashRef.current = JSON.stringify({
-              readings: nextReadings,
-              settings: nextSettings,
-            });
-
-            showToast(`☁️ ดึงข้อมูลคลาวด์ของ ${currentUser.displayName || 'Google'} สำเร็จ`);
-          }
-          setSyncStatus('synced');
-          setLastSyncedAt(new Date());
-        }).catch(() => {
-          setSyncStatus('synced');
-        });
       } else {
         setSyncStatus('unauthenticated');
       }
     });
 
     return () => unsubscribe();
-  }, [showToast]);
+  }, []);
 
-  // Real-time Supabase listener (auto syncs when user records on phone or roommates record)
-  const activeRoomId = settings.roomShare?.roomId || 'default-room';
+  // Opening an invite link while logged out sends the user to log in first
   useEffect(() => {
-    if (!user) return;
-    const unsubRealtime = subscribeToUserAndRoomRealtime(user.uid, activeRoomId, () => {
-      fetchUserDataFromCloud(user.uid, activeRoomId).then((cloudData) => {
-        if (!cloudData) return;
+    if (authResolved && !userId && hasPendingInvite) {
+      setCurrentView('login');
+      showToast('📩 เข้าสู่ระบบด้วยอีเมลที่ได้รับเชิญ เพื่อเข้าร่วมห้อง');
+    }
+  }, [authResolved, userId, hasPendingInvite, showToast]);
 
-        let hasNewData = false;
+  // Picks a room the user still has access to, creating one if they have none
+  const selectRoom = useCallback(
+    async (uid: string, list: RoomSummary[], preferredIds: (string | null)[], uploadLocalData: boolean) => {
+      let nextList = list;
+      if (nextList.length === 0) {
+        const base = uploadLocalData ? settingsRef.current : mergeRoomSettings(settingsRef.current, DEFAULT_SETTINGS);
+        const newId = await createRoom(uid, base);
+        if (uploadLocalData && readingsRef.current.length > 0) {
+          await syncRoomReadings(newId, readingsRef.current, []);
+        }
+        nextList = await listMyRooms(uid);
+      }
+      setRooms(nextList);
+      const target = preferredIds.find((id) => id && nextList.some((r) => r.id === id)) ?? nextList[0]?.id ?? null;
+      setActiveRoomId(target);
+      return target;
+    },
+    []
+  );
 
-        // Check if incoming readings are actually different
-        if (cloudData.readings && cloudData.readings.length > 0) {
-          const currentReadingsJson = JSON.stringify(readingsRef.current);
-          const incomingReadingsJson = JSON.stringify(cloudData.readings);
-          if (currentReadingsJson !== incomingReadingsJson) {
-            isRemoteSyncingRef.current = true;
-            setReadings(cloudData.readings);
-            saveReadings(cloudData.readings);
-            hasNewData = true;
+  // On login: accept invites, load the room list and choose the active room
+  useEffect(() => {
+    if (!userId) {
+      setRooms([]);
+      setActiveRoomId(null);
+      loadedRoomIdRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      setSyncStatus('syncing');
+
+      let joinedRoomId: string | null = null;
+      const token = captureInviteTokenFromUrl();
+      if (token) {
+        try {
+          joinedRoomId = await acceptInvite(token);
+          showToast('🎉 เข้าร่วมห้องสำเร็จ คุณเป็นผู้ดูแลห้องนี้แล้ว');
+        } catch (err) {
+          showToast(describeInviteError(err));
+        }
+        clearPendingInviteToken();
+      }
+
+      try {
+        const claimed = await claimMyInvites();
+        if (claimed.length > 0 && !joinedRoomId) {
+          joinedRoomId = claimed[0];
+          showToast(`🎉 คุณได้รับสิทธิ์ผู้ดูแล ${claimed.length} ห้องใหม่`);
+        }
+      } catch {
+        // invites are optional; ignore failures
+      }
+
+      const list = await listMyRooms(userId);
+      if (cancelled) return;
+      await selectRoom(userId, list, [joinedRoomId, getStoredActiveRoomId()], true);
+    })().catch(() => setSyncStatus('error'));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, selectRoom, showToast]);
+
+  // Live room list: react to being added to / removed from rooms
+  useEffect(() => {
+    if (!userId) return;
+    return subscribeToMyMemberships(userId, () => {
+      listMyRooms(userId)
+        .then((list) => {
+          setRooms(list);
+          const current = loadedRoomIdRef.current;
+          if (current && !list.some((r) => r.id === current)) {
+            showToast('ห้องนี้ถูกลบ หรือคุณถูกนำออกจากผู้ดูแลแล้ว');
+            loadedRoomIdRef.current = null;
+            return selectRoom(userId, list, [], false);
           }
-        }
-
-        // Check if incoming settings are actually different
-        if (cloudData.settings) {
-          const currentSettingsJson = JSON.stringify(settingsRef.current);
-          const merged = { ...settingsRef.current, ...cloudData.settings };
-          const mergedJson = JSON.stringify(merged);
-          if (currentSettingsJson !== mergedJson) {
-            isRemoteSyncingRef.current = true;
-            setSettings(merged);
-            saveSettings(merged);
-            hasNewData = true;
-          }
-        }
-
-        // Only show toast if real new data arrived from outside
-        if (hasNewData) {
-          lastPushedHashRef.current = JSON.stringify({
-            readings: cloudData.readings || readingsRef.current,
-            settings: cloudData.settings ? { ...settingsRef.current, ...cloudData.settings } : settingsRef.current,
-          });
-          showToast('⚡ ได้รับข้อมูลมิเตอร์อัปเดตจากอุปกรณ์อื่นแบบ Real-time');
-        }
-      });
+        })
+        .catch(() => {});
     });
+  }, [userId, selectRoom, showToast]);
 
-    return () => unsubRealtime();
-  }, [user, activeRoomId, showToast]);
+  // Load the active room and keep it in sync in real time
+  useEffect(() => {
+    if (!userId || !activeRoomId) return;
+    const roomId = activeRoomId;
+    storeActiveRoomId(roomId);
+
+    let cancelled = false;
+    const load = async (isRemoteUpdate: boolean) => {
+      const [remoteReadings, remoteSettings] = await Promise.all([
+        fetchRoomReadings(roomId),
+        fetchRoomSettings(roomId),
+      ]);
+      if (cancelled) return;
+
+      const changed =
+        loadedRoomIdRef.current !== roomId ||
+        readingsKey(remoteReadings) !== readingsKey(syncedReadingsRef.current) ||
+        sharedSettingsKey(mergeRoomSettings(settingsRef.current, remoteSettings)) !== syncedSettingsJsonRef.current;
+
+      if (changed) {
+        applyRemoteRoom(roomId, remoteReadings, remoteSettings);
+        if (isRemoteUpdate) showToast('⚡ ข้อมูลห้องอัปเดตจากผู้ดูแลคนอื่นแบบ Real-time');
+      }
+      setSyncStatus('synced');
+      setLastSyncedAt(new Date());
+    };
+
+    setSyncStatus('syncing');
+    load(false).catch(() => setSyncStatus('error'));
+
+    const unsubscribe = subscribeToRoom(
+      roomId,
+      (id) => syncedReadingsRef.current.some((r) => r.id === id),
+      () => {
+        if (loadedRoomIdRef.current !== roomId) return;
+        load(true).catch(() => {});
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [userId, activeRoomId, applyRemoteRoom, showToast]);
 
   // Async IndexedDB hydration (guarantees no data loss even after heavy sessions)
   useEffect(() => {
     loadReadingsAsync().then((idbReadings) => {
+      // Once a cloud room is loaded it is the source of truth
+      if (loadedRoomIdRef.current) return;
       if (idbReadings && idbReadings.length > 0) {
         setReadings((prev) => {
           if (prev.length === 0) return idbReadings;
@@ -243,6 +367,7 @@ export function App() {
     });
 
     loadSettingsAsync().then((idbSettings) => {
+      if (loadedRoomIdRef.current) return;
       if (idbSettings) {
         setSettings((prev) => ({ ...prev, ...idbSettings }));
       }
@@ -254,31 +379,47 @@ export function App() {
     }, 800);
   }, []);
 
-  // Check if opened via room share link
-  useEffect(() => {
-    const shared = checkUrlForShare();
-    if (shared) {
-      if (shared.readings && shared.readings.length > 0) {
-        setReadings(shared.readings);
-        saveReadings(shared.readings);
-      }
-      if (shared.settings) {
-        const nextSettings = {
-          ...settings,
-          ...shared.settings,
-          currentRole: shared.role,
-        };
-        setSettings(nextSettings);
-        saveSettings(nextSettings);
-      }
-      clearShareUrlParams();
-      showToast(
-        `📥 นำเข้าห้อง "${shared.settings.dormName || 'หอพัก'}" สำเร็จ (สิทธิ์: ${
-          shared.role === 'viewer' ? 'ดูอย่างเดียว' : 'ผู้ร่วมจด'
-        })`
-      );
+  const handleSwitchRoom = (roomId: string) => {
+    loadedRoomIdRef.current = null;
+    setActiveRoomId(roomId);
+  };
+
+  const handleCreateRoom = async () => {
+    if (!userId) {
+      setCurrentView('login');
+      return;
     }
-  }, [settings, showToast]);
+    try {
+      const base = mergeRoomSettings(settingsRef.current, { ...DEFAULT_SETTINGS, dormName: 'ห้องใหม่', roomNumber: '' });
+      const newId = await createRoom(userId, base);
+      setRooms(await listMyRooms(userId));
+      loadedRoomIdRef.current = null;
+      applyRemoteRoom(newId, [], base);
+      setActiveRoomId(newId);
+      setIsSettingsOpen(true);
+      showToast('สร้างห้องใหม่แล้ว ตั้งชื่อหอและเลขห้องได้เลย');
+    } catch {
+      showToast('สร้างห้องไม่สำเร็จ กรุณาลองใหม่');
+    }
+  };
+
+  const handleRoomRemoved = (roomId: string) => {
+    if (!userId) return;
+    if (loadedRoomIdRef.current === roomId) loadedRoomIdRef.current = null;
+    listMyRooms(userId)
+      .then((list) => selectRoom(userId, list.filter((r) => r.id !== roomId), [], false))
+      .then(() => showToast('ออกจากห้องแล้ว'))
+      .catch(() => {});
+  };
+
+  // Show the live name of the active room in the switcher
+  const displayRooms = useMemo(
+    () =>
+      rooms.map((r) =>
+        r.id === activeRoomId ? { ...r, dormName: settings.dormName, roomNumber: settings.roomNumber } : r
+      ),
+    [rooms, activeRoomId, settings.dormName, settings.roomNumber]
+  );
 
   // First-time tour check
   useEffect(() => {
@@ -296,52 +437,18 @@ export function App() {
   }, [readings, settings]);
 
   const handleSaveReading = (newReadingData: Omit<MeterReading, 'id'>) => {
-    if (currentRole === 'viewer') {
-      setIsShareModalOpen(true);
-      showToast('⚠️ คุณอยู่ในโหมดดูอย่างเดียว กรุณาใส่รหัส PIN เพื่อปลดล็อกสิทธิ์จดมิเตอร์');
-      return;
-    }
-
     const newReading: MeterReading = {
       ...newReadingData,
       id: `reading-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     };
 
-    const nextReadings = [newReading, ...readings];
-    setReadings(nextReadings);
-    saveReadings(nextReadings);
+    setReadings((prev) => [newReading, ...prev]);
     showToast(`บันทึกมิเตอร์${newReading.meterType === 'electricity' ? 'ไฟฟ้า' : 'น้ำประปา'}แล้ว`);
-
-    if (user) {
-      setSyncStatus('syncing');
-      pushUserDataToCloud(user.uid, { readings: nextReadings, settings })
-        .then((ok) => {
-          if (ok) {
-            lastPushedHashRef.current = JSON.stringify({ readings: nextReadings, settings });
-            setSyncStatus('synced');
-            setLastSyncedAt(new Date());
-          }
-        })
-        .catch(() => setSyncStatus('error'));
-    }
   };
 
   const handleDeleteReading = (id: string) => {
-    if (currentRole === 'viewer') {
-      showToast('⚠️ ไม่อนุญาตให้ลบข้อมูลในโหมดดูอย่างเดียว');
-      return;
-    }
-    const nextReadings = readings.filter((r) => r.id !== id);
-    setReadings(nextReadings);
-    saveReadings(nextReadings);
+    setReadings((prev) => prev.filter((r) => r.id !== id));
     showToast('ลบรายการบันทึกแล้ว');
-
-    if (user && supabase) {
-      supabase.from('readings').delete().eq('id', id).then(() => {
-        lastPushedHashRef.current = JSON.stringify({ readings: nextReadings, settings });
-        setSyncStatus('synced');
-      });
-    }
   };
 
   const handleExportCSV = () => {
@@ -380,18 +487,8 @@ export function App() {
   };
 
   const openRecordModal = (type: MeterType = 'electricity') => {
-    if (currentRole === 'viewer') {
-      setIsShareModalOpen(true);
-      showToast('⚠️ คุณอยู่ในโหมดดูอย่างเดียว กรุณาใส่รหัส PIN เพื่อปลดล็อกสิทธิ์ร่วมจด');
-      return;
-    }
     setRecordDefaultType(type);
     setIsRecordModalOpen(true);
-  };
-
-  const handleUpgradeRole = (newRole: UserRole) => {
-    setSettings((prev) => ({ ...prev, currentRole: newRole }));
-    showToast(`🎉 อัปเกรดสิทธิ์เป็น "${newRole === 'editor' ? 'ผู้ร่วมจด' : 'เจ้าของห้อง'}" เรียบร้อยแล้ว`);
   };
 
   const handleStartTour = () => {
@@ -402,45 +499,36 @@ export function App() {
   };
 
   const handleForceSyncNow = async () => {
-    if (!user) return;
+    const roomId = loadedRoomIdRef.current;
+    if (!userId || !roomId) return;
     setSyncStatus('syncing');
-    const ok = await pushUserDataToCloud(user.uid, { readings, settings });
-    if (ok) {
+    try {
+      await pushRoomChanges(roomId, readingsRef.current, settingsRef.current);
       setSyncStatus('synced');
       setLastSyncedAt(new Date());
-    } else {
+    } catch {
       setSyncStatus('error');
       throw new Error('Sync failed');
     }
   };
 
   const handlePullCloudData = async () => {
-    if (!user) return;
+    const roomId = loadedRoomIdRef.current;
+    if (!userId || !roomId) return;
     setSyncStatus('syncing');
-    const cloudData = await fetchUserDataFromCloud(user.uid, settings.roomShare?.roomId);
-    if (cloudData) {
-      let nextReadings = readings;
-      let nextSettings = settings;
-
-      if (cloudData.readings && cloudData.readings.length > 0) {
-        nextReadings = cloudData.readings;
-        setReadings(cloudData.readings);
-        saveReadings(cloudData.readings);
-      }
-      if (cloudData.settings) {
-        nextSettings = { ...settings, ...cloudData.settings };
-        setSettings(nextSettings);
-        saveSettings(nextSettings);
-      }
-      lastPushedHashRef.current = JSON.stringify({
-        readings: nextReadings,
-        settings: nextSettings,
-      });
+    try {
+      const [remoteReadings, remoteSettings] = await Promise.all([
+        fetchRoomReadings(roomId),
+        fetchRoomSettings(roomId),
+      ]);
+      // Explicit pull discards local unsynced edits
+      loadedRoomIdRef.current = null;
+      applyRemoteRoom(roomId, remoteReadings, remoteSettings);
       setSyncStatus('synced');
       setLastSyncedAt(new Date());
       showToast('☁️ ดึงข้อมูลล่าสุดจากคลาวด์สำเร็จ');
-    } else {
-      setSyncStatus('synced');
+    } catch {
+      setSyncStatus('error');
     }
   };
 
@@ -502,21 +590,6 @@ export function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Viewer Notice Header Banner if in Read-Only Mode */}
-        {currentRole === 'viewer' && (
-          <div className="bg-amber-500/10 border-b border-amber-200/80 px-4 py-2 text-center text-xs text-amber-900 flex items-center justify-center gap-2">
-            <Eye className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-            <span>คุณกำลังเปิดดูในโหมด <strong>"ดูอย่างเดียว (Viewer)"</strong></span>
-            <button
-              type="button"
-              onClick={() => setIsShareModalOpen(true)}
-              className="underline font-bold text-amber-800 hover:text-amber-950 cursor-pointer ml-1"
-            >
-              ใส่รหัส PIN เพื่อร่วมจดมิเตอร์
-            </button>
-          </div>
-        )}
-
         {/* Top Header */}
         <Header
           activeTab={activeTab}
@@ -539,6 +612,10 @@ export function App() {
             setUser(null);
             showToast('ออกจากระบบสำเร็จ');
           }}
+          rooms={displayRooms}
+          activeRoomId={activeRoomId}
+          onSwitchRoom={handleSwitchRoom}
+          onCreateRoom={handleCreateRoom}
         />
 
         {/* Dynamic Page Views */}
@@ -633,10 +710,14 @@ export function App() {
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
-        settings={settings}
-        readings={readings}
-        currentRole={currentRole}
-        onUpgradeRole={handleUpgradeRole}
+        user={user}
+        room={displayRooms.find((r) => r.id === activeRoomId) ?? null}
+        onRequireLogin={() => {
+          setIsShareModalOpen(false);
+          setCurrentView('login');
+        }}
+        onRoomRemoved={handleRoomRemoved}
+        showToast={showToast}
       />
 
       {/* Toast Alert matching the reference alert card at bottom-right */}

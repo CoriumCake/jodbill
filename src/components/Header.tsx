@@ -11,9 +11,13 @@ import {
   Smartphone,
   Sprout,
   Sun,
-  Moon
+  Moon,
+  Check,
+  Plus,
+  Crown,
+  ShieldCheck
 } from 'lucide-react';
-import type { UserSettings, UserRole, AuthUser, SyncStatus } from '../types';
+import type { UserSettings, UserRole, AuthUser, SyncStatus, RoomSummary } from '../types';
 import { usePWAInstall } from '../utils/usePWAInstall';
 
 interface HeaderProps {
@@ -33,6 +37,10 @@ interface HeaderProps {
   onStartTour: () => void;
   onOpenAuth: () => void;
   onLogout?: () => void;
+  rooms: RoomSummary[];
+  activeRoomId: string | null;
+  onSwitchRoom: (roomId: string) => void;
+  onCreateRoom: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -47,9 +55,15 @@ export const Header: React.FC<HeaderProps> = ({
   onStartTour,
   onOpenAuth,
   onLogout,
+  rooms,
+  activeRoomId,
+  onSwitchRoom,
+  onCreateRoom,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isRoomMenuOpen, setIsRoomMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const roomMenuRef = useRef<HTMLDivElement>(null);
   const { isInstallable, installApp } = usePWAInstall();
 
   // Close user dropdown menu when clicking outside
@@ -57,6 +71,9 @@ export const Header: React.FC<HeaderProps> = ({
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsUserMenuOpen(false);
+      }
+      if (roomMenuRef.current && !roomMenuRef.current.contains(event.target as Node)) {
+        setIsRoomMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -88,17 +105,92 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-xs font-medium text-slate-500 hidden sm:inline shrink-0">
             เลือกห้อง
           </span>
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="flex items-center gap-1.5 sm:gap-2.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 shadow-2xs transition-all cursor-pointer group min-w-0"
-          >
-            <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0" />
-            <span className="truncate max-w-[130px] sm:max-w-[220px]">
-              {roomDisplay}
-            </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0 ml-0.5" />
-          </button>
+          <div className="relative min-w-0" ref={roomMenuRef}>
+            <button
+              type="button"
+              onClick={() => (user ? setIsRoomMenuOpen((open) => !open) : onOpenSettings())}
+              className="flex items-center gap-1.5 sm:gap-2.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 shadow-2xs transition-all cursor-pointer group min-w-0 max-w-full"
+            >
+              <Building2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0" />
+              <span className="truncate max-w-[130px] sm:max-w-[220px]">
+                {roomDisplay}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0 ml-0.5" />
+            </button>
+
+            {isRoomMenuOpen && (
+              <div className="absolute left-0 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl bg-white border border-slate-200 shadow-xl p-1.5 z-40 animate-fade-in">
+                <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold text-slate-400">
+                  ห้องของฉัน ({rooms.length})
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {rooms.map((room) => (
+                    <button
+                      key={room.id}
+                      type="button"
+                      onClick={() => {
+                        setIsRoomMenuOpen(false);
+                        if (room.id !== activeRoomId) onSwitchRoom(room.id);
+                      }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs transition-all cursor-pointer ${
+                        room.id === activeRoomId ? 'bg-slate-100' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      {room.role === 'owner' ? (
+                        <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      ) : (
+                        <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-slate-800 truncate">
+                          {room.roomNumber ? `ห้อง ${room.roomNumber}` : room.dormName || room.id}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate">
+                          {room.dormName} · {room.role === 'owner' ? 'เจ้าของ' : 'ผู้ดูแล'}
+                        </div>
+                      </div>
+                      {room.id === activeRoomId && <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-slate-100 mt-1 pt-1 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRoomMenuOpen(false);
+                      onCreateRoom();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-slate-500" />
+                    <span>สร้างห้องใหม่</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRoomMenuOpen(false);
+                      onOpenSettings();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <SettingsIcon className="w-3.5 h-3.5 text-slate-500" />
+                    <span>ตั้งค่าห้องนี้</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRoomMenuOpen(false);
+                      onOpenShare();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span>แชร์ & จัดการผู้ดูแล</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right: Install App & User Login / Profile Menu */}
