@@ -1,28 +1,32 @@
 import type { MeterReading, UserSettings, CycleSummary, MeterType } from '../types';
 import { calculateElectricityCost, calculateWaterCost } from './rateCalculator';
 
+/**
+ * A cycle covers the day after one cutoff day through the end of the next cutoff day.
+ * The cutoff day itself belongs to the cycle it closes, so a reading taken on payment day
+ * (e.g. the 29th) completes the old cycle instead of being the zero baseline of the new one.
+ * `start` is the end of the previous cutoff day: readings at or before it are baselines.
+ */
 export function getBillingCycleRange(cutoffDay: number, referenceDate: Date = new Date()): { start: Date; end: Date; cycleName: string } {
-  const currentDay = referenceDate.getDate();
-  const currentMonth = referenceDate.getMonth();
-  const currentYear = referenceDate.getFullYear();
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
 
-  let start: Date;
-  let end: Date;
+  // Clamp to month length so cutoff 29-31 never spills into the next month (e.g. 31 in Feb)
+  const cutoffEnd = (m: number) => {
+    const daysInMonth = new Date(year, m + 1, 0).getDate();
+    return new Date(year, m, Math.min(cutoffDay, daysInMonth), 23, 59, 59, 999);
+  };
 
-  if (currentDay >= cutoffDay) {
-    start = new Date(currentYear, currentMonth, cutoffDay, 0, 0, 0, 0);
-    end = new Date(currentYear, currentMonth + 1, cutoffDay, 23, 59, 59, 999);
-  } else {
-    start = new Date(currentYear, currentMonth - 1, cutoffDay, 0, 0, 0, 0);
-    end = new Date(currentYear, currentMonth, cutoffDay, 23, 59, 59, 999);
-  }
+  const closesThisMonth = referenceDate.getTime() <= cutoffEnd(month).getTime();
+  const start = cutoffEnd(closesThisMonth ? month - 1 : month);
+  const end = cutoffEnd(closesThisMonth ? month : month + 1);
 
   const thaiMonths = [
     'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
     'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
   ];
 
-  const cycleName = `รอบ ${cutoffDay} ${thaiMonths[start.getMonth()]} - ${cutoffDay} ${thaiMonths[end.getMonth()]} ${(end.getFullYear() + 543).toString().slice(-2)}`;
+  const cycleName = `รอบ ${start.getDate()} ${thaiMonths[start.getMonth()]} - ${end.getDate()} ${thaiMonths[end.getMonth()]} ${(end.getFullYear() + 543).toString().slice(-2)}`;
 
   return { start, end, cycleName };
 }
@@ -84,7 +88,7 @@ export function calculateCycleSummary(
     }
 
     const inCycleReadings = utilityReadings.filter(
-      (r) => new Date(r.timestamp).getTime() >= start.getTime() && new Date(r.timestamp).getTime() <= end.getTime()
+      (r) => new Date(r.timestamp).getTime() > start.getTime() && new Date(r.timestamp).getTime() <= end.getTime()
     );
 
     let baseline = utilityReadings.filter((r) => new Date(r.timestamp).getTime() <= start.getTime()).pop();

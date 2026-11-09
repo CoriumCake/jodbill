@@ -193,3 +193,21 @@ export function calculateElectricityCost(units: number, rateConfig: RateConfig):
     return calculateGovElectricityCost(units, rateConfig);
   }
 }
+
+/**
+ * Inverse of a cost function: units (0.1 resolution) whose cost matches `targetCost`.
+ * Cost is non-decreasing in units for every rate mode, so bisection is exact enough.
+ * Returns 0 when the target does not exceed the zero-usage cost (fixed fees only).
+ */
+export function unitsForCost(targetCost: number, costOf: (units: number) => number): number {
+  if (!(targetCost > costOf(0))) return 0;
+  let lo = 0;
+  let hi = 1;
+  while (costOf(hi) < targetCost && hi < 1e6) hi *= 2;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (costOf(mid) < targetCost) lo = mid;
+    else hi = mid;
+  }
+  return Math.round(hi * 10) / 10;
+}

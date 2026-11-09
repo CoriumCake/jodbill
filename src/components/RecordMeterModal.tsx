@@ -21,7 +21,13 @@ import {
   scanLiveCameraFrame
 } from '../utils/ocrService';
 import { createThumbnail } from '../utils/storage';
-import { calculateElectricityCost, calculateWaterCost } from '../utils/rateCalculator';
+import { calculateElectricityCost, calculateWaterCost, unitsForCost } from '../utils/rateCalculator';
+
+// `datetime-local` expects local wall-clock time; toISOString() would give UTC and shift it
+const toLocalInputValue = (d: Date = new Date()): string => {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 interface RecordMeterModalProps {
   isOpen: boolean;
@@ -42,8 +48,10 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
 }) => {
   const [meterType, setMeterType] = useState<MeterType>(defaultType);
   const [readingInput, setReadingInput] = useState<string>('');
+  const [entryMode, setEntryMode] = useState<'meter' | 'price'>('meter');
+  const [priceInput, setPriceInput] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
-  const [timestamp, setTimestamp] = useState<string>(new Date().toISOString().slice(0, 16));
+  const [timestamp, setTimestamp] = useState<string>(toLocalInputValue());
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   
   const [isProcessingOCR, setIsProcessingOCR] = useState<boolean>(false);
@@ -66,21 +74,38 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
 
   const previousValue = latestReading ? latestReading.reading : 0;
-  const currentNumValue = parseFloat(readingInput) || 0;
-  const unitsDiff = readingInput ? Math.round((currentNumValue - previousValue) * 10) / 10 : 0;
+  const costOf = (units: number) =>
+    meterType === 'electricity'
+      ? calculateElectricityCost(units, settings.rateConfig).totalCost
+      : calculateWaterCost(units, settings.rateConfig).totalCost;
 
-  const costDiff = unitsDiff > 0
-    ? (meterType === 'electricity'
-        ? calculateElectricityCost(unitsDiff, settings.rateConfig).totalCost
-        : calculateWaterCost(unitsDiff, settings.rateConfig).totalCost)
-    : 0;
+  // Flat-fee water cost does not depend on units, so a price cannot be converted to a reading
+  const canEnterPrice = !(
+    meterType === 'water' &&
+    settings.rateConfig.mode === 'dorm_flat' &&
+    settings.rateConfig.waterBillingType !== 'per_unit'
+  );
+  const priceMode = entryMode === 'price' && canEnterPrice;
+
+  // Price mode: derive the equivalent usage from the billed amount, then treat it as a normal reading
+  const priceNum = parseFloat(priceInput) || 0;
+  const priceUnits = priceMode ? unitsForCost(priceNum, costOf) : 0;
+  const hasInput = priceMode ? priceUnits > 0 : !!readingInput;
+  const currentNumValue = priceMode
+    ? Math.round((previousValue + priceUnits) * 10) / 10
+    : parseFloat(readingInput) || 0;
+  const unitsDiff = hasInput ? Math.round((currentNumValue - previousValue) * 10) / 10 : 0;
+
+  const costDiff = priceMode ? priceNum : unitsDiff > 0 ? costOf(unitsDiff) : 0;
 
   useEffect(() => {
     if (isOpen) {
       setMeterType(defaultType);
       setReadingInput('');
       setNotes('');
-      setTimestamp(new Date().toISOString().slice(0, 16));
+      setTimestamp(toLocalInputValue());
+      setEntryMode('meter');
+      setPriceInput('');
       setPhotoDataUrl(null);
       setIsCameraActive(false);
       setIsProcessingOCR(false);
@@ -229,6 +254,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       );
 
       if (result.reading > 0) {
+        setEntryMode('meter');
         setReadingInput(result.reading.toString());
         setDetectedProvider(result.provider);
         setOcrConfidence(result.confidence);
@@ -255,9 +281,9 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
   };
 
   const handleSave = async () => {
-    const num = parseFloat(readingInput);
-    if (isNaN(num) || num < 0) {
-      alert('กรุณาระบุเลขมิเตอร์ให้ถูกต้อง');
+    const num = currentNumValue;
+    if (!hasInput || isNaN(num) || num < 0) {
+      alert(priceMode ? 'กรุณาระบุยอดเงินให้มากกว่าค่าบริการคงที่' : 'กรุณาระบุเลขมิเตอร์ให้ถูกต้อง');
       return;
     }
 
@@ -278,7 +304,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       calculatedCost: costDiff > 0 ? costDiff : undefined,
       timestamp: new Date(timestamp).toISOString(),
       photoUrl: finalPhotoUrl,
-      notes: notes.trim() || undefined,
+      notes: notes.trim() || (priceMode ? `คำนวณจากยอดบิล ฿${priceNum.toLocaleString()}` : undefined),
       detectedBy: detectedProvider,
       ocrConfidence: ocrConfidence,
     });
@@ -287,7 +313,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
       particleCount: 40,
       spread: 50,
       origin: { y: 0.7 },
-      colors: ['#0f172a', '#f59e0b', '#0284c7'],
+      colors: ['#64748b', '#f59e0b', '#0284c7'],
     });
 
     onClose();
@@ -384,6 +410,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      setEntryMode('meter');
                       setReadingInput(liveReading.reading.toString());
                       setDetectedProvider('tesseract');
                       setOcrConfidence(liveReading.confidence);
@@ -517,9 +544,26 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
 
           {/* Number Input & Stepper */}
           <div className="space-y-2.5">
+            {canEnterPrice && (
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                {([['meter', 'กรอกเลขมิเตอร์'], ['price', 'กรอกยอดเงิน (฿)']] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setEntryMode(mode)}
+                    className={`py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      entryMode === mode ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-slate-700">
-                เลขหน้าปัดมิเตอร์ใหม่
+                {priceMode ? 'ยอดเงินที่ต้องจ่าย (ตามบิลเจ้าของห้อง)' : 'เลขหน้าปัดมิเตอร์ใหม่'}
               </label>
               {previousValue > 0 && (
                 <span className="text-xs text-slate-500 font-mono">
@@ -532,23 +576,27 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
               <input
                 type="text"
                 inputMode="decimal"
-                placeholder={previousValue > 0 ? (previousValue + 1).toFixed(1) : '2190.0'}
-                value={readingInput}
+                placeholder={priceMode ? '500' : previousValue > 0 ? (previousValue + 1).toFixed(1) : '2190.0'}
+                value={priceMode ? priceInput : readingInput}
                 onFocus={(e) => e.target.select()}
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                    setReadingInput(val);
-                    setDetectedProvider('manual');
+                    if (priceMode) {
+                      setPriceInput(val);
+                    } else {
+                      setReadingInput(val);
+                      setDetectedProvider('manual');
+                    }
                   }
                 }}
                 className="w-full bg-slate-50 text-2xl font-black font-mono text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-slate-800 focus:bg-white focus:outline-none"
               />
               <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                {readingInput && (
+                {(priceMode ? priceInput : readingInput) && (
                   <button
                     type="button"
-                    onClick={() => setReadingInput('')}
+                    onClick={() => (priceMode ? setPriceInput('') : setReadingInput(''))}
                     className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-200/60 transition-colors cursor-pointer"
                     title="ล้างค่า"
                   >
@@ -556,12 +604,17 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                   </button>
                 )}
                 <span className="text-xs font-semibold text-slate-400 font-mono">
-                  {meterType === 'electricity' ? 'kWh' : 'm³'}
+                  {priceMode ? '฿' : meterType === 'electricity' ? 'kWh' : 'm³'}
                 </span>
               </div>
             </div>
 
+            {priceMode && priceNum > 0 && priceUnits === 0 && (
+              <p className="text-[11px] text-rose-700">ยอดเงินต้องมากกว่าค่าบริการคงที่ จึงจะคำนวณหน่วยที่ใช้ได้</p>
+            )}
+
             {/* Quick Step Buttons */}
+            {!priceMode && (
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] text-slate-400 mr-0.5">ปรับเร็ว:</span>
               {[-1.0, -0.1, +0.1, +1.0, +5.0, +10.0].map((step) => (
@@ -575,9 +628,10 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                 </button>
               ))}
             </div>
+            )}
 
             {/* Difference & Cost preview */}
-            {readingInput && (
+            {hasInput && (
               <div
                 className={`p-3 rounded-xl border text-xs font-medium ${
                   unitsDiff < 0
@@ -589,7 +643,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
                   <span>
                     {unitsDiff < 0
                       ? '⚠️ ตัวเลขน้อยกว่าครั้งก่อนหน้า'
-                      : `ใช้เพิ่มขึ้น: +${unitsDiff.toFixed(1)} ${meterType === 'electricity' ? 'หน่วย' : 'ยูนิต'}`}
+                      : `ใช้เพิ่มขึ้น: +${unitsDiff.toFixed(1)} ${meterType === 'electricity' ? 'หน่วย' : 'ยูนิต'}${priceMode ? ` (เลขมิเตอร์โดยประมาณ ${currentNumValue.toFixed(1)})` : ''}`}
                   </span>
                   {unitsDiff > 0 && (
                     <span className="font-mono font-bold text-sm">
@@ -653,7 +707,7 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
           <button
             type="button"
             onClick={handleSave}
-            disabled={!readingInput || parseFloat(readingInput) <= 0}
+            disabled={!hasInput || currentNumValue <= 0}
             className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs active:scale-95 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
           >
             <Check className="w-3.5 h-3.5" />
