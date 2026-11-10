@@ -5,7 +5,8 @@ import {
   Zap, 
   Droplets, 
   FileText,
-  Home
+  Home,
+  Trash2
 } from 'lucide-react';
 import type { CycleSummary, UserSettings } from '../types';
 
@@ -28,7 +29,8 @@ export const BillSlipModal: React.FC<BillSlipModalProps> = ({
     window.print();
   };
 
-  const { electricity, water, cycleName, monthlyRent } = summary;
+  const { electricity, water, cycleName, monthlyRent, monthlyGarbageFee } = summary;
+  const hasFees = monthlyRent + monthlyGarbageFee > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
@@ -80,6 +82,18 @@ export const BillSlipModal: React.FC<BillSlipModalProps> = ({
                 </span>
                 <span className="font-mono text-sm">
                   ฿{monthlyRent.toFixed(2)}
+                </span>
+              </div>
+            )}
+
+            {monthlyGarbageFee > 0 && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between font-bold text-slate-900">
+                <span className="flex items-center gap-1.5">
+                  <Trash2 className="w-3.5 h-3.5 text-slate-700" />
+                  ค่าขยะรายเดือน
+                </span>
+                <span className="font-mono text-sm">
+                  ฿{monthlyGarbageFee.toFixed(2)}
                 </span>
               </div>
             )}
@@ -144,14 +158,14 @@ export const BillSlipModal: React.FC<BillSlipModalProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-slate-700 block">
-                  {monthlyRent > 0 ? 'ยอดรวมบิลห้องพักทั้งสิ้น' : 'ยอดรวมประมาณการ'}
+                  {hasFees ? 'ยอดรวมบิลห้องพักทั้งสิ้น' : 'ยอดรวมประมาณการ'}
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  {monthlyRent > 0 ? '(ค่าห้อง + ค่าน้ำ + ค่าไฟ)' : '(คำนวณตามอัตราใช้จริง)'}
+                  {hasFees ? '(ค่าห้อง/ค่าขยะ + ค่าน้ำ + ค่าไฟ)' : '(คำนวณตามอัตราใช้จริง)'}
                 </span>
               </div>
               <span className="text-xl font-black text-slate-900 font-mono">
-                ฿{(monthlyRent > 0 ? summary.totalProjectedWithRent : summary.totalProjectedCost).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ฿{(hasFees ? summary.totalProjectedWithFees : summary.totalProjectedCost).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>

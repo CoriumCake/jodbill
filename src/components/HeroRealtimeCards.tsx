@@ -10,7 +10,8 @@ import {
   Share2,
   MapPin,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -49,7 +50,8 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
   canGoPrevCycle,
   canGoNextCycle,
 }) => {
-  const { electricity, water, monthlyRent } = summary;
+  const { electricity, water, monthlyRent, monthlyGarbageFee } = summary;
+  const hasFees = monthlyRent + monthlyGarbageFee > 0;
   const [activeMetricTab, setActiveMetricTab] = useState<'both' | 'electricity' | 'water'>('both');
   const [displayMode, setDisplayMode] = useState<'cost' | 'units'>('cost');
 
@@ -147,12 +149,12 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
   }, [readings, summary, settings.rateConfig, isWaterFlatFee, flatWaterCost, displayMode]);
 
   // Total calculations
-  const totalCurrent = monthlyRent > 0 
-    ? summary.totalCurrentWithRent 
+  const totalCurrent = hasFees 
+    ? summary.totalCurrentWithFees 
     : summary.totalCurrentCost;
 
-  const totalProjected = monthlyRent > 0 
-    ? summary.totalProjectedWithRent 
+  const totalProjected = hasFees 
+    ? summary.totalProjectedWithFees 
     : summary.totalProjectedCost;
 
   return (
@@ -253,8 +255,8 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
               {totalProjected > 0 ? totalProjected.toLocaleString() : '—'}
             </div>
             <div className="text-[11px] text-slate-400 mt-1 truncate">
-              {monthlyRent > 0
-                ? `รวมค่าเช่าห้อง ${monthlyRent.toLocaleString()} • ปัจจุบัน ${totalCurrent.toLocaleString()}`
+              {hasFees
+                ? `รวมค่าคงที่ ${(monthlyRent + monthlyGarbageFee).toLocaleString()} • ปัจจุบัน ${totalCurrent.toLocaleString()}`
                 : `ยอดใช้จริงสะสมแล้ว ${totalCurrent.toLocaleString()}`}
             </div>
           </div>
@@ -513,6 +515,18 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                   </span>
                   <span className="font-normal text-slate-800">
                     {monthlyRent.toLocaleString()}
+                  </span>
+                </div>
+              )}
+
+              {monthlyGarbageFee > 0 && (
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="flex items-center gap-1.5">
+                    <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                    <span>ค่าขยะ</span>
+                  </span>
+                  <span className="font-normal text-slate-800">
+                    {monthlyGarbageFee.toLocaleString()}
                   </span>
                 </div>
               )}

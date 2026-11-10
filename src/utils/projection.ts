@@ -192,8 +192,10 @@ export function calculateCycleSummary(
   const monthlyRent = typeof settings.monthlyRent === 'number' ? settings.monthlyRent : 0;
   const totalCurrentCost = Math.round((electricity.currentCost + water.currentCost) * 100) / 100;
   const totalProjectedCost = Math.round((electricity.projectedCost + water.projectedCost) * 100) / 100;
-  const totalProjectedWithRent = Math.round((totalProjectedCost + monthlyRent) * 100) / 100;
-  const totalCurrentWithRent = Math.round((totalCurrentCost + monthlyRent) * 100) / 100;
+  const monthlyGarbageFee = typeof settings.monthlyGarbageFee === 'number' ? settings.monthlyGarbageFee : 0;
+  const fixedFees = monthlyRent + monthlyGarbageFee;
+  const totalProjectedWithFees = Math.round((totalProjectedCost + fixedFees) * 100) / 100;
+  const totalCurrentWithFees = Math.round((totalCurrentCost + fixedFees) * 100) / 100;
   const totalBudget = settings.budgetElectricity + settings.budgetWater;
   const totalBudgetPercent = totalBudget > 0 ? Math.round((totalProjectedCost / totalBudget) * 100) : 0;
 
@@ -207,10 +209,11 @@ export function calculateCycleSummary(
     electricity,
     water,
     monthlyRent,
+    monthlyGarbageFee,
     totalCurrentCost,
     totalProjectedCost,
-    totalProjectedWithRent,
-    totalCurrentWithRent,
+    totalProjectedWithFees,
+    totalCurrentWithFees,
     totalBudget,
     totalBudgetPercent,
   };

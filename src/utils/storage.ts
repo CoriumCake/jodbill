@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   dormName: 'หอพักของฉัน',
   roomNumber: '101',
   monthlyRent: 3500,
+  monthlyGarbageFee: 0,
   billingCutoffDay: 25,
   budgetElectricity: 1500,
   budgetWater: 200,

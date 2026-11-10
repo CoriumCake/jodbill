@@ -10,7 +10,8 @@ import {
   RotateCcw, 
   Upload,
   Users,
-  Home
+  Home,
+  Trash2
 } from 'lucide-react';
 import type { UserSettings, DormFlatRateConfig, GovernmentRateConfig, WaterBillingType } from '../types';
 
@@ -545,6 +546,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {rent === 0 ? 'ไม่มีค่าห้อง' : `฿${rent.toLocaleString()}`}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Monthly Garbage Fee */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Trash2 className="w-3.5 h-3.5 text-slate-700" />
+                    ค่าขยะรายเดือน (บาท)
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">ใส่ 0 หากไม่มี</span>
+                </div>
+                <div className="relative">
+                  <NumericInput
+                    value={formData.monthlyGarbageFee ?? 0}
+                    onChange={(val) => setFormData({ ...formData, monthlyGarbageFee: Math.max(0, val) })}
+                    placeholder="เช่น 30 หรือ 50"
+                    className="w-full bg-white text-sm font-bold font-mono text-slate-900 px-3 py-2 rounded-lg border border-slate-300 focus:border-slate-800 focus:outline-none"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">บาท/เดือน</span>
                 </div>
               </div>
             </div>
