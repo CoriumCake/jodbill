@@ -22,6 +22,7 @@ import {
 } from '../utils/ocrService';
 import { createThumbnail } from '../utils/storage';
 import { calculateElectricityCost, calculateWaterCost, unitsForCost } from '../utils/rateCalculator';
+import { getBillingCycleRange } from '../utils/projection';
 
 // `datetime-local` expects local wall-clock time; toISOString() would give UTC and shift it
 const toLocalInputValue = (d: Date = new Date()): string => {
@@ -91,12 +92,19 @@ export const RecordMeterModal: React.FC<RecordMeterModalProps> = ({
   const priceNum = parseFloat(priceInput) || 0;
   const priceUnits = priceMode ? unitsForCost(priceNum, costOf) : 0;
   const hasInput = priceMode ? priceUnits > 0 : !!readingInput;
+  // The billed amount covers the whole cycle, so it counts from the cycle's baseline reading,
+  // not from the latest reading (that would stack the full bill on top of usage already recorded)
+  const cycleStart = getBillingCycleRange(settings.billingCutoffDay, new Date(timestamp)).start.getTime();
+  const cycleBaseline = readings
+    .filter((r) => r.meterType === meterType && new Date(r.timestamp).getTime() <= cycleStart)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+  const priceBase = cycleBaseline ? cycleBaseline.reading : previousValue;
   const currentNumValue = priceMode
-    ? Math.round((previousValue + priceUnits) * 10) / 10
+    ? Math.round((priceBase + priceUnits) * 10) / 10
     : parseFloat(readingInput) || 0;
   const unitsDiff = hasInput ? Math.round((currentNumValue - previousValue) * 10) / 10 : 0;
 
-  const costDiff = priceMode ? priceNum : unitsDiff > 0 ? costOf(unitsDiff) : 0;
+  const costDiff = unitsDiff > 0 ? costOf(unitsDiff) : 0;
 
   useEffect(() => {
     if (isOpen) {
