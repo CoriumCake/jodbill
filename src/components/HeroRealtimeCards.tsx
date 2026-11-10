@@ -8,7 +8,9 @@ import {
   Building,
   FileText,
   Share2,
-  MapPin
+  MapPin,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -30,6 +32,9 @@ interface HeroRealtimeCardsProps {
   onOpenBillSlip?: () => void;
   onOpenShare?: () => void;
   hasReadings?: boolean;
+  onChangeCycle: (delta: -1 | 1) => void;
+  canGoPrevCycle: boolean;
+  canGoNextCycle: boolean;
 }
 
 export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
@@ -40,6 +45,9 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
   onOpenBillSlip,
   onOpenShare,
   hasReadings: _hasReadings = false,
+  onChangeCycle,
+  canGoPrevCycle,
+  canGoNextCycle,
 }) => {
   const { electricity, water, monthlyRent } = summary;
   const [activeMetricTab, setActiveMetricTab] = useState<'both' | 'electricity' | 'water'>('both');
@@ -51,15 +59,21 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
   // Format chart data with cost & units from readings
   const chartData = React.useMemo(() => {
     if (!readings || readings.length === 0) return [];
-    const sorted = [...readings].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+    const startMs = summary.startDate.getTime();
+    const endMs = summary.endDate.getTime();
+    const sorted = readings
+      .filter((r) => {
+        const t = new Date(r.timestamp).getTime();
+        return t > startMs && t <= endMs;
+      })
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     const elecReadings = sorted.filter((r) => r.meterType === 'electricity');
     const waterReadings = sorted.filter((r) => r.meterType === 'water');
 
-    const elecBase = elecReadings.length > 0 ? elecReadings[0].reading : 0;
-    const waterBase = waterReadings.length > 0 ? waterReadings[0].reading : 0;
+    // Same baseline the summary cards use, so chart and cards agree for the selected cycle
+    const elecBase = summary.electricity.startReading;
+    const waterBase = summary.water.startReading;
 
     const dateMap = new Map<string, {
       date: string;
@@ -130,7 +144,7 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
         waterCost: item.waterCost,
         waterUnits: item.waterUnits,
       }));
-  }, [readings, settings.rateConfig, isWaterFlatFee, flatWaterCost, displayMode]);
+  }, [readings, summary, settings.rateConfig, isWaterFlatFee, flatWaterCost, displayMode]);
 
   // Total calculations
   const totalCurrent = monthlyRent > 0 
@@ -160,9 +174,27 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
               <Plus className="w-4 h-4 text-slate-700" />
             </button>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 font-normal">
-            ติดตามสภาพแวดล้อมและสถานะมิเตอร์จากจุดเดียว
-          </p>
+          <div className="flex items-center gap-1 text-xs sm:text-sm text-slate-500 font-normal">
+            <button
+              type="button"
+              onClick={() => onChangeCycle(-1)}
+              disabled={!canGoPrevCycle}
+              title="รอบก่อนหน้า"
+              className="p-1 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="min-w-[10.5rem] text-center">{summary.cycleName}</span>
+            <button
+              type="button"
+              onClick={() => onChangeCycle(1)}
+              disabled={!canGoNextCycle}
+              title="รอบถัดไป"
+              className="p-1 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -349,9 +381,9 @@ export const HeroRealtimeCards: React.FC<HeroRealtimeCardsProps> = ({
                         <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                    <XAxis dataKey="date" stroke="var(--color-slate-400)" fontSize={11} tickLine={false} />
                     <YAxis 
-                      stroke="#94a3b8" 
+                      stroke="var(--color-slate-400)" 
                       fontSize={11} 
                       tickLine={false}
                       tickFormatter={(val) => displayMode === 'cost' ? `฿${val}` : `${val}`}

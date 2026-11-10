@@ -31,6 +31,17 @@ export function getBillingCycleRange(cutoffDay: number, referenceDate: Date = ne
   return { start, end, cycleName };
 }
 
+/**
+ * Reference date inside the cycle `offset` cycles away from the current one (0 = current, -1 = previous).
+ * Past cycles are referenced at their end so they read as fully elapsed.
+ */
+export function getCycleRefDate(cutoffDay: number, offset: number, now: Date = new Date()): Date {
+  if (offset === 0) return now;
+  const current = getBillingCycleRange(cutoffDay, now);
+  const target = new Date(current.end.getFullYear(), current.end.getMonth() + offset, 1, 12);
+  return getBillingCycleRange(cutoffDay, target).end;
+}
+
 export function calculateCycleSummary(
   readings: MeterReading[],
   settings: UserSettings,
@@ -45,11 +56,14 @@ export function calculateCycleSummary(
   const daysPassed = Math.min(daysTotal, Math.max(0.5, msPassed / msPerDay));
   const daysRemaining = Math.max(0, daysTotal - daysPassed);
 
-  const elecReadings = readings
+  // Readings after the cycle's end belong to later cycles and must not count as "latest"
+  const visible = readings.filter((r) => new Date(r.timestamp).getTime() <= end.getTime());
+
+  const elecReadings = visible
     .filter((r) => r.meterType === 'electricity')
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  const waterReadings = readings
+  const waterReadings = visible
     .filter((r) => r.meterType === 'water')
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 

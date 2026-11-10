@@ -13,7 +13,7 @@ import {
   isTourCompleted,
   DEFAULT_SETTINGS 
 } from './utils/storage';
-import { calculateCycleSummary } from './utils/projection';
+import { calculateCycleSummary, getCycleRefDate } from './utils/projection';
 import { startProductTour } from './utils/tour';
 import { preloadOCRWorker } from './utils/ocrService';
 import { subscribeToAuth, logoutUser } from './utils/authService';
@@ -432,9 +432,18 @@ export function App() {
     }
   }, []);
 
+  // 0 = current billing cycle, -1 = previous, ...
+  const [cycleOffset, setCycleOffset] = useState(0);
+
   const cycleSummary = useMemo(() => {
-    return calculateCycleSummary(readings, settings);
-  }, [readings, settings]);
+    return calculateCycleSummary(readings, settings, getCycleRefDate(settings.billingCutoffDay, cycleOffset));
+  }, [readings, settings, cycleOffset]);
+
+  const canGoPrevCycle = useMemo(() => {
+    if (readings.length === 0) return false;
+    const earliest = Math.min(...readings.map((r) => new Date(r.timestamp).getTime()));
+    return cycleSummary.startDate.getTime() > earliest;
+  }, [readings, cycleSummary]);
 
   const handleSaveReading = (newReadingData: Omit<MeterReading, 'id'>) => {
     const newReading: MeterReading = {
@@ -626,6 +635,9 @@ export function App() {
               summary={cycleSummary}
               settings={settings}
               readings={readings}
+              onChangeCycle={(delta) => setCycleOffset((o) => Math.min(0, o + delta))}
+              canGoPrevCycle={canGoPrevCycle}
+              canGoNextCycle={cycleOffset < 0}
               onOpenRecord={openRecordModal}
               onOpenBillSlip={() => setIsBillSlipOpen(true)}
               onOpenShare={() => setIsShareModalOpen(true)}
